@@ -1,0 +1,7 @@
+What this script does (simple explanation)
+- Opens a ROS2 bag file (SQLite3 format, standard for ros2 bag)
+- Looks specifically for the /human_tracker/output topic (your annotated images)
+- Converts each ROS Image message to OpenCV image using CvBridge
+- Saves each frame as frame_000001.jpg, frame_000002.jpg, etc. in the output folder
+- Prints progress and summary
+- Has placeholders ready for future metrics (MOTA/IDF1) when we have ground truth
