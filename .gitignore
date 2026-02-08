@@ -47,3 +47,31 @@ sim_extracted_frames/
 extracted_frames/
 *.jpg
 runs/
+# Large binary files from rosbags & analysis
+*.jpg
+*.png
+*.db3
+*.db3.zstd
+*.zstd
+
+# Temporary extraction/analysis folders
+extracted_*/
+sim_annotated_*/
+depth_heatmaps_*/
+fused_*/
+plots/
+plots_minimal/
+test_output/
+extracted_ir_dark/
+extracted_depth_dark/
+sim_annotated_dark/
+depth_heatmaps_dark/
+fused_ir_depth_dark/
+
+# Other common ignores (optional but good)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+._*
