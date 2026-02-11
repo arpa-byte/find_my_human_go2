@@ -67,6 +67,8 @@ extracted_depth_dark/
 sim_annotated_dark/
 depth_heatmaps_dark/
 fused_ir_depth_dark/
+ml_workspace/datasets/
+
 
 # Other common ignores (optional but good)
 __pycache__/
