@@ -1,0 +1,6 @@
+path: /Volumes/SamsungT7/thesis_ws_two/find_my_human_go2/ml_ws/datasets/frieburg_rgbd/preprocess
+train: images/train
+val: images/val
+
+nc: 1
+names: ['person']
