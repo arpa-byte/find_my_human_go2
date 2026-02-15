@@ -76,6 +76,13 @@ ml_ws/datasets/**/*
 !ml_ws/datasets/**/*.py
 !ml_ws/datasets/**/*.yaml
 
+# Temporary test outputs
+sim_extracted_frames/
+extracted_frames/
+*.jpg
+runs/
+**/runs/
+
 # Other common ignores (optional but good)
 __pycache__/
 *.pyc
