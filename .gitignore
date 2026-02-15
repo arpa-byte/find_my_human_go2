@@ -69,6 +69,12 @@ depth_heatmaps_dark/
 fused_ir_depth_dark/
 ml_workspace/datasets/
 
+ml_ws/datasets/**/*
+
+!ml_ws/datasets/**/
+
+!ml_ws/datasets/**/*.py
+!ml_ws/datasets/**/*.yaml
 
 # Other common ignores (optional but good)
 __pycache__/
