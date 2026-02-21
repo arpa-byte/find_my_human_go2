@@ -5,7 +5,7 @@ data: /Volumes/SamsungT7/thesis_ws_two/find_my_human_go2/ml_ws/datasets/frieburg
 model: yolov8n.pt
 
 # Training
-epochs: 2                  # start very small to test stability
+epochs: 15                  # start very small to test stability
 batch: 4                   # safe memory usage on M2 Air
 imgsz: 640
 workers: 4
@@ -22,8 +22,8 @@ warmup_momentum: 0.8
 warmup_bias_lr: 0.1
 
 # Light augmentation (depth is sensitive)
-hsv_h: 0.015
-hsv_s: 0.7
+hsv_h: 0.001
+hsv_s: 0.1
 hsv_v: 0.4
 degrees: 0.0
 translate: 0.1
@@ -42,3 +42,4 @@ exist_ok: true
 save_period: 2             # save every 2 epochs (more frequent for testing)
 plots: true
 verbose: true
+patience: 3                # early stopping patience
