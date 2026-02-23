@@ -1,45 +1,49 @@
-# Freiburg depth-only person detection – safe for M2 Mac CPU
+# Freiburg depth-only person detection – tuned for noise robustness & better boxes
+# M2 Mac CPU safe settings + augmentations & hyperparameter fixes
 
 data: /Volumes/SamsungT7/thesis_ws_two/find_my_human_go2/ml_ws/datasets/frieburg_rgbd/preprocess/data.yaml
 
 model: yolov8n.pt
 
-# Training
-epochs: 15                  # start very small to test stability
-batch: 4                   # safe memory usage on M2 Air
+# Training duration & memory
+epochs: 20
+batch: 4                   # Try 8; drop to 4 if OOM on M2
 imgsz: 640
 workers: 4
-device: cpu                # force CPU
+device: cpu
 
-# Optimizer (SGD more stable on CPU)
+# Optimizer – switched to AdamW for noisy data
 optimizer: SGD
-lr0: 0.01
-lrf: 0.01
+lr0: 0.01                 # Lower for stable, non-jumpy learning
+lrf: 0.01                 # Lower final LR for smoother late convergence
 momentum: 0.937
 weight_decay: 0.0005
 warmup_epochs: 3.0
 warmup_momentum: 0.8
 warmup_bias_lr: 0.1
 
-# Light augmentation (depth is sensitive)
+# Augmentation – moderate to teach robustness to noise/holes/orientation
 hsv_h: 0.001
 hsv_s: 0.1
-hsv_v: 0.4
+hsv_v: 0.6                 # Increased for depth contrast/saturation variation
 degrees: 0.0
 translate: 0.1
 scale: 0.5
-shear: 0.0
+shear: 5.0                 # Slight angle distortion to mimic imperfect blobs
 perspective: 0.0
-flipud: 0.0
-fliplr: 0.5
-mosaic: 0.0
-mixup: 0.0
+flipud: 0.5                # Vertical flip – handles upside-down views
+fliplr: 0.5                # Horizontal flip – symmetry
+mosaic: 0.5                # Blends 4 images – simulates holes/occlusions
+mixup: 0.5                 # Overlays 2 images – teaches ignoring faint noise
+
+# Loss weights – prioritize accurate boxes
+box: 10.0                  # Higher weight → tighter, more complete bounding boxes
 
 # Logging & output
 project: runs/detect
-name: train_freiburg_yolov8
+name: train_freiburg_yolov8_tuned
 exist_ok: true
-save_period: 2             # save every 2 epochs (more frequent for testing)
+save_period: 5             # Save more frequently
 plots: true
 verbose: true
-patience: 3                # early stopping patience
+patience: 5                # Slightly longer patience
