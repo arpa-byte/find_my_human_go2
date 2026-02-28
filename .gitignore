@@ -43,7 +43,7 @@ htmlcov/
 # Do NOT ignore these (important source files)
 !human_tracker/human_tracker/yolov8n.pt   # ← if you really want to commit the model (5–10 MB, ok for small repo)
 
-# Virtual Environments
-venv/
-.venv/
-env/
+# Virtual Environments (Catch-all for any directory level)
+**/venv/
+**/.venv/
+**/env/
