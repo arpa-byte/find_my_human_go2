@@ -47,3 +47,37 @@ htmlcov/
 **/venv/
 **/.venv/
 **/env/
+
+# ────────────────────────────────────────────────
+# Large media / dataset files — NEVER commit these
+# ────────────────────────────────────────────────
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+*.tif
+*.gif
+*.npy
+*.npz
+*.bin
+*.pkl
+*.h5
+*.hdf5
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.bag
+*.bag.active
+
+# Specific folders that grow huge
+raw_data/
+processed_dataset/
+models/*.pt
+models/*.weights
+models/*.onnx
+models/*.engine
+
+# Temp capture folders inside scripts (if you keep producing there)
+depth_model/scripts/realsense_capture/*_??_??_??/
