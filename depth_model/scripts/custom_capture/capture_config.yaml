@@ -1,0 +1,7 @@
+# =============================================
+# Capture Configuration for Phase 1
+# =============================================
+width: 640
+height: 480
+fps: 30                     # This is only used for VideoWriter. Pipeline will use camera default.
+session_suffix: session01   # Optional: you can change to session02 etc.
