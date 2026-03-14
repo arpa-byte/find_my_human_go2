@@ -8,12 +8,6 @@ from tqdm import tqdm
 
 
 def npy_to_jpg_conversion(depth_npy_dir, depth_jpg_dir, min_depth_mm=300, max_depth_mm=5000):
-    """
-    Convert all .npy depth files to 8-bit 3-channel jpg images for YOLO training.
-    - Clips to min/max depth
-    - Normalizes to 0-255
-    - Duplicates to 3 channels
-    """
     npy_files = sorted([f for f in os.listdir(depth_npy_dir) if f.endswith('.npy')])
     if not npy_files:
         print("No .npy files found to convert.")
@@ -26,25 +20,20 @@ def npy_to_jpg_conversion(depth_npy_dir, depth_jpg_dir, min_depth_mm=300, max_de
         npy_path = os.path.join(depth_npy_dir, fname)
         jpg_path = os.path.join(depth_jpg_dir, fname.replace('.npy', '.jpg'))
 
-        depth = np.load(npy_path).astype(np.float32)  # shape: (H, W)
+        depth = np.load(npy_path).astype(np.float32)
 
-        # Clip to realistic range (in mm)
         depth = np.clip(depth, min_depth_mm, max_depth_mm)
-
-        # Normalize to 0-255
         depth_norm = (depth - min_depth_mm) / (max_depth_mm - min_depth_mm + 1e-8)
         depth_8bit = (depth_norm * 255).astype(np.uint8)
-
-        # Duplicate to 3 channels (YOLO expects 3-channel input)
         depth_3ch = cv2.cvtColor(depth_8bit, cv2.COLOR_GRAY2BGR)
 
         cv2.imwrite(jpg_path, depth_3ch)
 
-    print(f"Conversion finished! {len(npy_files)} jpg files saved to:\n  {depth_jpg_dir}")
+    print(f"Conversion done! {len(npy_files)} jpgs in: {depth_jpg_dir}")
 
 
 def main():
-    # === 1. Start pipeline ===
+    # === 1. Pipeline - explicit safe profile ===
     pipeline = rs.pipeline()
     config = rs.config()
     config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
@@ -60,7 +49,7 @@ def main():
     color_profile = profile.get_stream(rs.stream.color).as_video_stream_profile()
     width = color_profile.width()
     height = color_profile.height()
-    print(f"Camera started with resolution: {width} x {height}")
+    print(f"Camera started: {width} x {height} @ ~30 fps")
 
     # === 2. Session folder ===
     now = datetime.datetime.now()
@@ -69,13 +58,13 @@ def main():
     session_dir = os.path.join("../../../raw_data", session_name)
     video_path = os.path.join(session_dir, "rgb_video.mp4")
     depth_npy_dir = os.path.join(session_dir, "depth_npy")
-    depth_jpg_dir = os.path.join(session_dir, "depth_jpg")   # new folder for converted images
+    depth_jpg_dir = os.path.join(session_dir, "depth_jpg")
 
     os.makedirs(session_dir, exist_ok=True)
     os.makedirs(depth_npy_dir, exist_ok=True)
-    print(f"Session folder created: {session_dir}")
+    print(f"Session folder: {session_dir}")
 
-    # === 3. Video writer ===
+    # === 3. Video writer (RGB only) ===
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_writer = cv2.VideoWriter(video_path, fourcc, 30, (width, height))
 
@@ -91,16 +80,22 @@ def main():
         import json
         json.dump(camera_params, f, indent=2)
 
-    # === 5. Recording loop ===
+    # === 5. Loop variables ===
     frame_idx = 0
     recording = False
     prev_time = time.time()
     fps_counter = 0
     displayed_fps = 0.0
 
+    # View mode: 0 = RGB (default), 1 = Depth
+    view_mode = 0
+    view_names = ["RGB (default)", "Depth (clipped/normalized)"]
+
     print("\nControls:")
     print("   S   → Start / Pause recording")
-    print("   Q   → Quit and start conversion")
+    print("   Q   → Quit + convert npy → jpg")
+    print("   R   → RGB view (default)")
+    print("   D   → Depth view")
 
     try:
         while True:
@@ -114,7 +109,7 @@ def main():
                 continue
 
             rgb = np.asanyarray(color_frame.get_data())
-            depth = np.asanyarray(depth_frame.get_data())
+            depth_raw = np.asanyarray(depth_frame.get_data())
 
             # Live FPS
             fps_counter += 1
@@ -124,32 +119,48 @@ def main():
                 fps_counter = 0
                 prev_time = current_time
 
-            display_img = rgb.copy()
+            # Prepare display based on mode
+            if view_mode == 0:  # RGB
+                display_img = rgb.copy()
+            else:  # Depth
+                depth_clip = np.clip(depth_raw, 300, 5000).astype(np.float32)
+                depth_norm = (depth_clip - 300) / (5000 - 300 + 1e-8)
+                depth_8bit = (depth_norm * 255).astype(np.uint8)
+                display_img = cv2.cvtColor(depth_8bit, cv2.COLOR_GRAY2BGR)
+
+            # Overlay info
             cv2.putText(display_img, f"FPS: {displayed_fps:.1f}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(display_img, f"View: {view_names[view_mode]}", (10, 70),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 165, 0), 2)
 
             status = "RECORDING" if recording else "PAUSED"
-            cv2.putText(display_img, status, (10, 70),
+            cv2.putText(display_img, status, (10, 110),
                         cv2.FONT_HERSHEY_SIMPLEX, 1,
                         (0, 0, 255) if recording else (255, 255, 0), 2)
 
-            cv2.imshow("Live RGB - S: Start/Pause | Q: Quit", display_img)
+            cv2.imshow("Live View - S: Rec | Q: Quit | R/D: Switch", display_img)
 
             key = cv2.waitKey(1) & 0xFF
 
             if key == ord('q') or key == ord('Q'):
                 break
-
             elif key == ord('s') or key == ord('S'):
                 recording = not recording
                 print(f"Recording {'STARTED' if recording else 'PAUSED'}")
+            elif key == ord('r') or key == ord('R'):
+                view_mode = 0
+                print("Switched to RGB view")
+            elif key == ord('d') or key == ord('D'):
+                view_mode = 1
+                print("Switched to Depth view")
 
             if recording:
                 frame_idx += 1
-                video_writer.write(rgb)
+                video_writer.write(rgb)  # always save RGB
 
                 npy_path = os.path.join(depth_npy_dir, f"frame_{frame_idx:05d}.npy")
-                np.save(npy_path, depth)
+                np.save(npy_path, depth_raw)
 
                 if frame_idx % 30 == 0:
                     print(f"  Saved frame {frame_idx:05d}")
@@ -167,11 +178,10 @@ def main():
         print(f"Live FPS      : {displayed_fps:.1f}")
         print("="*80)
 
-        # === 6. Convert .npy to .jpg for YOLO training ===
         if frame_idx > 0:
             npy_to_jpg_conversion(depth_npy_dir, depth_jpg_dir)
         else:
-            print("No frames recorded → skipping conversion.")
+            print("No frames → skipping conversion.")
 
 
 if __name__ == "__main__":
