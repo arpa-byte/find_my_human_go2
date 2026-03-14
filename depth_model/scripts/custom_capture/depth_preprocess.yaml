@@ -1,0 +1,16 @@
+# =============================================
+# Depth Preprocessing Configuration
+# Only applied to depth feed (live view + final jpg conversion)
+# =============================================
+
+# CLAHE parameters (Contrast Limited Adaptive Histogram Equalization)
+clahe:
+  enabled: true
+  clip_limit: 1.0          # Higher = more contrast, typical range 1.0–4.0
+  tile_grid_size: [16, 16]   # Grid size (rows, cols), typical 8x8 or 16x16
+
+# You can add more depth preprocessing steps here later, e.g.:
+# denoising:
+#   enabled: false
+#   method: median
+#   kernel_size: 3
