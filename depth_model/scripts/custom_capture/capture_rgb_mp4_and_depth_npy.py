@@ -61,6 +61,9 @@ def main():
     capture_cfg = load_yaml("capture_config.yaml")
     preprocess_cfg = load_yaml("depth_preprocess.yaml")
 
+    countdown_sec = capture_cfg.get('countdown_seconds', 5.0)
+    record_sec = capture_cfg.get('record_seconds', 10.0)
+
     # === 1. Pipeline ===
     pipeline = rs.pipeline()
     config = rs.config()
@@ -78,13 +81,16 @@ def main():
     height = color_profile.height()
     print(f"Camera started: {width} x {height} @ ~{capture_cfg['fps']} fps (preview mode)")
 
-    # === 2. Variables (session folder created only on first record) ===
+    # === 2. Variables (session only created when recording actually starts) ===
     session_dir = None
     video_writer = None
     depth_npy_dir = None
     depth_jpg_dir = None
     frame_idx = 0
     recording = False
+    countdown_active = False
+    countdown_start = 0.0
+    record_start = 0.0
     prev_time = time.time()
     fps_counter = 0
     displayed_fps = 0.0
@@ -97,8 +103,8 @@ def main():
     clahe_enabled = preprocess_cfg.get('clahe', {}).get('enabled', False)
 
     print("\nControls:")
-    print("   S   → Start / Pause recording (creates folder on first press)")
-    print("   Q   → Quit (no folder created if never recorded)")
+    print(f"   S   → Start countdown → record for {record_sec}s (creates folder when recording begins)")
+    print("   Q   → Quit (no folder if never started recording)")
     print("   R   → RGB view")
     print("   D   → Depth view (with preprocessing)")
     print("   C   → Toggle CLAHE preprocessing (only affects Depth view & final jpg)")
@@ -125,10 +131,54 @@ def main():
                 fps_counter = 0
                 prev_time = current_time
 
+            # Handle countdown
+            if countdown_active:
+                elapsed = current_time - countdown_start
+                remaining = max(0, countdown_sec - elapsed)
+                countdown_text = f"Countdown: {int(remaining)+1:.0f}"
+                if remaining <= 0:
+                    countdown_active = False
+                    recording = True
+                    record_start = current_time
+                    print("Countdown finished → Recording STARTED")
+                    # Create folder + writer now
+                    now = datetime.datetime.now()
+                    timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
+                    session_name = f"{timestamp}_{capture_cfg.get('session_suffix', 'session01')}"
+                    session_dir = os.path.join("../../../raw_data", session_name)
+                    video_path = os.path.join(session_dir, "rgb_video.mp4")
+                    depth_npy_dir = os.path.join(session_dir, "depth_npy")
+                    depth_jpg_dir = os.path.join(session_dir, "depth_jpg")
+
+                    os.makedirs(session_dir, exist_ok=True)
+                    os.makedirs(depth_npy_dir, exist_ok=True)
+                    print(f"Session folder created: {session_dir}")
+
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    video_writer = cv2.VideoWriter(video_path, fourcc, capture_cfg["fps"], (width, height))
+
+                    intr = color_profile.get_intrinsics()
+                    camera_params = {
+                        'fx': intr.fx, 'fy': intr.fy,
+                        'ppx': intr.ppx, 'ppy': intr.ppy,
+                        'width': width, 'height': height,
+                        'depth_scale': depth_scale
+                    }
+                    with open(os.path.join(session_dir, 'intrinsics.json'), 'w') as f:
+                        import json
+                        json.dump(camera_params, f, indent=2)
+
+            # Auto-stop after record_seconds
+            if recording:
+                elapsed_record = current_time - record_start
+                if elapsed_record >= record_sec:
+                    recording = False
+                    print(f"Recording duration reached ({record_sec}s) → Recording STOPPED")
+
             # Prepare display
             if view_mode == 0:  # RGB
                 display_img = rgb.copy()
-            else:  # Depth with preprocessing
+            else:  # Depth
                 depth_processed = apply_depth_preprocessing(depth_raw, preprocess_cfg, clahe_enabled)
                 display_img = cv2.cvtColor(depth_processed.astype(np.uint8), cv2.COLOR_GRAY2BGR)
 
@@ -141,10 +191,14 @@ def main():
             cv2.putText(display_img, clahe_status, (10, 110),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255) if clahe_enabled else (128, 128, 128), 2)
 
-            status = "RECORDING" if recording else "PAUSED"
-            cv2.putText(display_img, status, (10, 150),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1,
-                        (0, 0, 255) if recording else (255, 255, 0), 2)
+            if countdown_active:
+                cv2.putText(display_img, countdown_text, (10, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 0), 3)
+            else:
+                status = "RECORDING" if recording else "PAUSED"
+                cv2.putText(display_img, status, (10, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1,
+                            (0, 0, 255) if recording else (255, 255, 0), 2)
 
             cv2.imshow("Live View - S: Rec | Q: Quit | R/D: View | C: CLAHE", display_img)
 
@@ -154,38 +208,17 @@ def main():
                 break
 
             elif key == ord('s') or key == ord('S'):
-                recording = not recording
-                print(f"Recording {'STARTED' if recording else 'PAUSED'}")
-
-                # Create folder + writer on FIRST press of S
-                if recording and session_dir is None:
-                    now = datetime.datetime.now()
-                    timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
-                    session_name = f"{timestamp}_{capture_cfg.get('session_suffix', 'session01')}"
-                    session_dir = os.path.join("../../../raw_data", session_name)
-                    video_path = os.path.join(session_dir, "rgb_video.mp4")
-                    depth_npy_dir = os.path.join(session_dir, "depth_npy")
-                    depth_jpg_dir = os.path.join(session_dir, "depth_jpg")
-
-                    os.makedirs(session_dir, exist_ok=True)
-                    os.makedirs(depth_npy_dir, exist_ok=True)
-                    print(f"Session folder created (recording started): {session_dir}")
-
-                    # Video writer
-                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    video_writer = cv2.VideoWriter(video_path, fourcc, capture_cfg["fps"], (width, height))
-
-                    # Intrinsics (save only once)
-                    intr = color_profile.get_intrinsics()
-                    camera_params = {
-                        'fx': intr.fx, 'fy': intr.fy,
-                        'ppx': intr.ppx, 'ppy': intr.ppy,
-                        'width': width, 'height': height,
-                        'depth_scale': depth_scale
-                    }
-                    with open(os.path.join(session_dir, 'intrinsics.json'), 'w') as f:
-                        import json
-                        json.dump(camera_params, f, indent=2)
+                if countdown_active:
+                    countdown_active = False
+                    recording = False
+                    print("Countdown cancelled")
+                elif recording:
+                    recording = False
+                    print("Recording manually PAUSED")
+                else:
+                    countdown_active = True
+                    countdown_start = time.time()
+                    print(f"Countdown started ({countdown_sec}s) → recording will begin after")
 
             elif key == ord('r') or key == ord('R'):
                 view_mode = 0
@@ -213,7 +246,7 @@ def main():
         pipeline.stop()
         cv2.destroyAllWindows()
 
-        if session_dir is not None:
+        if session_dir is not None and frame_idx > 0:
             print("\n" + "="*80)
             print("Recording finished!")
             print(f"Session       : {session_dir}")
@@ -223,12 +256,9 @@ def main():
             print(f"Final CLAHE state for conversion: {'ON' if clahe_enabled else 'OFF'}")
             print("="*80)
 
-            if frame_idx > 0:
-                npy_to_jpg_conversion(depth_npy_dir, depth_jpg_dir, preprocess_cfg, clahe_enabled)
-            else:
-                print("No frames recorded → no conversion.")
+            npy_to_jpg_conversion(depth_npy_dir, depth_jpg_dir, preprocess_cfg, clahe_enabled)
         else:
-            print("\nNo recording started → no files saved, no folder created.")
+            print("\nNo recording completed → no files saved.")
 
 if __name__ == "__main__":
     main()

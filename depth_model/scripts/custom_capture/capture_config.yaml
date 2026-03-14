@@ -1,7 +1,12 @@
 # =============================================
-# Capture Configuration for Phase 1
+# Capture Configuration (YAML)
 # =============================================
 width: 640
 height: 480
-fps: 30                     # This is only used for VideoWriter. Pipeline will use camera default.
-session_suffix: session01   # Optional: you can change to session02 etc.
+fps: 30                     # Used for VideoWriter (pipeline uses camera default)
+
+# New: Timed recording controls
+countdown_seconds: 5.0      # Seconds to count down before actual recording starts
+record_seconds: 10.0        # Duration of each recording after countdown ends
+
+session_suffix: session01   # Optional: change to session02 etc. for manual naming
