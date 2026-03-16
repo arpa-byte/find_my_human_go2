@@ -81,3 +81,10 @@ models/*.engine
 
 # Temp capture folders inside scripts (if you keep producing there)
 depth_model/scripts/realsense_capture/*_??_??_??/
+
+# ────────────────────────────────────────────────
+# Auto-labeling outputs — NEVER commit these
+# ────────────────────────────────────────────────
+processed_dataset/labels/
+processed_dataset/*/vis/
+processed_dataset/*/labeled_rgb_video.mp4
