@@ -1,0 +1,28 @@
+# =============================================
+# Auto-Labeling Configuration (YOLOv8 on RGB videos)
+# =============================================
+
+# === Input & Output Paths ===
+raw_data_root: "/home/arpan/masterthesis/depth/find_my_human_go2/raw_data"
+processed_labels_root: "/home/arpan/masterthesis/depth/find_my_human_go2/depth_model/processed_dataset/labels"
+
+# === Which session to label (change this each time) ===
+session_name: "2026_03_16_19_47_29_session01"   # ← EDIT THIS to match your folder name
+
+# === YOLO Model Settings ===
+yolo_model: "yolov8n.pt"          # or yolov8s.pt for better accuracy (slower)
+confidence_threshold: 0.45        # Minimum detection confidence
+iou_threshold: 0.45               # NMS IoU threshold
+classes: [0]                      # Only person class (COCO class 0)
+
+# === Visualization (for QA) ===
+save_visualizations: true
+vis_subfolder: "vis"              # saved inside session label folder
+vis_color: [0, 255, 0]            # green boxes
+vis_thickness: 2
+
+# === New: Create labeled output video ===
+create_labeled_video: true
+labeled_video_name: "labeled_rgb_video.mp4"
+video_codec: "mp4v"               # fourcc code
+video_fps: 30                     # output fps (should match original)
