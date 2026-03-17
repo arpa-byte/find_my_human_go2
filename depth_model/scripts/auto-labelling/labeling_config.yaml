@@ -1,5 +1,5 @@
 # =============================================
-# Auto-Labeling Configuration (YOLOv8 on RGB videos)
+# Auto-Labeling Configuration (YOLOv8 on RGB videos + Depth visualization)
 # =============================================
 
 # === Input & Output Paths ===
@@ -15,15 +15,18 @@ confidence_threshold: 0.45        # Minimum detection confidence
 iou_threshold: 0.45               # NMS IoU threshold
 classes: [0]                      # Only person class (COCO class 0)
 
-# === Visualization (for QA) ===
+# === RGB Visualization & Video ===
 save_visualizations: true
-rgb_vis_subfolder: "rgb_vis"      # ← Changed from "vis" to "rgb_vis"
+rgb_vis_subfolder: "rgb_vis"
 vis_color: [0, 255, 0]            # green boxes
 vis_thickness: 2
-
-# === Labeled Video Output ===
 create_labeled_video: true
-labeled_video_subfolder: "rgb_video_vis"   # ← New subfolder name
+labeled_video_subfolder: "rgb_video_vis"
 labeled_video_name: "labeled_rgb_video.mp4"
-video_codec: "mp4v"               # fourcc code
-video_fps: 30                     # output fps (should match original)
+video_codec: "mp4v"
+video_fps: 30
+
+# === Depth Visualization (copy + draw same boxes) ===
+save_depth_visualizations: true
+depth_copy_subfolder: "depth_copy"        # copied original depth jpgs
+depth_vis_subfolder: "depth_vis"          # depth with drawn boxes
