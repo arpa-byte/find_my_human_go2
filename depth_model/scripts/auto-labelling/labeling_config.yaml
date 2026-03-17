@@ -4,7 +4,7 @@
 
 # === Input & Output Paths ===
 raw_data_root: "/home/arpan/masterthesis/depth/find_my_human_go2/raw_data"
-processed_labels_root: "/home/arpan/masterthesis/depth/find_my_human_go2/depth_model/processed_dataset/labels"
+processed_labels_root: "/home/arpan/masterthesis/depth/find_my_human_go2/depth_model/processed_dataset"
 
 # === Which session to label (change this each time) ===
 session_name: "2026_03_16_19_47_29_session01"   # ← EDIT THIS to match your folder name
@@ -17,12 +17,13 @@ classes: [0]                      # Only person class (COCO class 0)
 
 # === Visualization (for QA) ===
 save_visualizations: true
-vis_subfolder: "vis"              # saved inside session label folder
+rgb_vis_subfolder: "rgb_vis"      # ← Changed from "vis" to "rgb_vis"
 vis_color: [0, 255, 0]            # green boxes
 vis_thickness: 2
 
-# === New: Create labeled output video ===
+# === Labeled Video Output ===
 create_labeled_video: true
+labeled_video_subfolder: "rgb_video_vis"   # ← New subfolder name
 labeled_video_name: "labeled_rgb_video.mp4"
 video_codec: "mp4v"               # fourcc code
 video_fps: 30                     # output fps (should match original)
