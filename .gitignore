@@ -42,3 +42,30 @@ htmlcov/
 
 # Do NOT ignore these (important source files)
 !human_tracker/human_tracker/yolov8n.pt   # ← if you really want to commit the model (5–10 MB, ok for small repo)
+
+# Ignore the external realsense repo
+realsense-ros/
+
+# Archive and Documents
+*.zip
+*.tar.gz
+*.rar
+*.pdf
+
+# ROS bag files
+*.bag
+*.mcap
+/rosbag/
+
+# Media files
+*.mp4
+*.avi
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.gif
+
+# Ensure config files are NOT ignored (even if in a build-like folder)
+!*.yaml
+!*.rviz
