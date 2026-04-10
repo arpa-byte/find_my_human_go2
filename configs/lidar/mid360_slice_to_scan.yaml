@@ -1,0 +1,20 @@
+lidar_pointcloud_to_scan:
+  ros__parameters:
+    input_cloud_topic: "/livox/lidar"
+    output_scan_topic: "/scan_knee"
+    output_cloud_topic: "/livox/lidar_pointcloud2"
+
+    slice_z_min: -0.60
+    slice_z_max: -0.05
+
+    angle_min: -3.141592653589793
+    angle_max: 3.141592653589793
+
+    num_beams: 720
+
+    range_min: 0.05
+    range_max: 10.0
+
+    scan_time: 0.10
+    use_inf: true
+    verbose: true

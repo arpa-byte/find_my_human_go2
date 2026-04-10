@@ -1,0 +1,158 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Help Height: 78
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Status1
+        - /TF1
+        - /Livox Cloud1
+        - /Knee Scan1
+        - /Camera Target1
+        - /Fused Target1
+      Splitter Ratio: 0.5
+    Tree Height: 650
+
+  - Class: rviz_common/Views
+    Name: Views
+    Splitter Ratio: 0.5
+
+Visualization Manager:
+  Class: ""
+  Name: root
+
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: base_link
+    Frame Rate: 30
+
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: base_link
+      Color: 160; 160; 160
+      Alpha: 0.5
+      Value: true
+
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Show Axes: true
+      Show Names: true
+      Marker Scale: 0.5
+      Frame Timeout: 15
+      Update Interval: 0
+      Value: true
+
+    - Class: rviz_default_plugins/Axes
+      Name: Base Axes
+      Enabled: true
+      Reference Frame: base_link
+      Length: 0.25
+      Radius: 0.015
+      Value: true
+
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Livox Cloud
+      Enabled: true
+      Topic:
+        Value: /livox/lidar_pointcloud2
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Style: Flat Squares
+      Size (Pixels): 3
+      Size (m): 0.02
+      Color Transformer: Intensity
+      Channel Name: intensity
+      Use rainbow: true
+      Alpha: 0.3
+      Position Transformer: XYZ
+      Selectable: true
+      Use Fixed Frame: true
+      Decay Time: 0.5
+      Value: true
+
+    - Class: rviz_default_plugins/LaserScan
+      Name: Knee Scan
+      Enabled: true
+      Topic:
+        Value: /scan_knee
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Style: Flat Squares
+      Size (Pixels): 6
+      Color: 255; 0; 0
+      Alpha: 1
+      Decay Time: 0.5
+      Use Fixed Frame: true
+      Value: true
+
+    - Class: rviz_default_plugins/Marker
+      Name: Camera Target
+      Enabled: true
+      Marker Topic:
+        Value: /camera_person_tracker/target_marker
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Namespaces:
+        person_tracker: true
+      Queue Size: 100
+      Value: true
+
+    - Class: rviz_default_plugins/Marker
+      Name: Fused Target
+      Enabled: true
+      Marker Topic:
+        Value: /camera_person_tracker/fused_target_marker
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Namespaces:
+        fusion: true
+      Queue Size: 100
+      Value: true
+
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+    - Class: rviz_default_plugins/PublishPoint
+      Topic:
+        Value: /clicked_point
+
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 5.5
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0.5
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.6
+      Target Frame: base_link
+      Yaw: 0.8
+
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 950
+  Width: 1450
+  X: 80
+  Y: 40

@@ -1,0 +1,143 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Help Height: 78
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Status1
+        - /TF1
+        - /Livox Cloud1
+        - /Knee Scan1
+      Splitter Ratio: 0.5
+    Tree Height: 650
+
+  - Class: rviz_common/Views
+    Name: Views
+    Splitter Ratio: 0.5
+
+Visualization Manager:
+  Class: ""
+  Name: root
+
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: livox_frame
+    Frame Rate: 30
+
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: livox_frame
+      Color: 160; 160; 160
+      Alpha: 0.5
+      Value: true
+
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Show Axes: true
+      Show Names: true
+      Marker Scale: 0.5
+      Frame Timeout: 15
+      Update Interval: 0
+      Value: true
+
+    - Class: rviz_default_plugins/Axes
+      Name: LiDAR Axes
+      Enabled: true
+      Reference Frame: livox_frame
+      Length: 0.2
+      Radius: 0.01
+      Value: true
+
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Livox Cloud
+      Enabled: true
+
+      Topic:
+        Value: /livox/lidar_pointcloud2
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+
+      Style: Flat Squares
+      Size (Pixels): 3
+      Size (m): 0.02
+
+      Color Transformer: Intensity
+      Channel Name: intensity
+      Use rainbow: true
+
+      Alpha: 0.3
+
+      Position Transformer: XYZ
+      Selectable: true
+      Use Fixed Frame: true
+      Decay Time: 0.5
+      Value: true
+
+    - Class: rviz_default_plugins/LaserScan
+      Name: Knee Scan
+      Enabled: true
+
+      Topic:
+        Value: /scan_knee
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+
+      Style: Flat Squares
+      Size (Pixels): 6
+      Color: 255; 0; 0
+      Alpha: 1
+
+      Decay Time: 0.5
+
+      Use Fixed Frame: true
+      Value: true
+
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /goal_pose
+    - Class: rviz_default_plugins/PublishPoint
+      Topic:
+        Value: /clicked_point
+
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 6
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.6
+      Target Frame: livox_frame
+      Yaw: 0.8
+
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 900
+  Width: 1400
+  X: 100
+  Y: 60
