@@ -1,0 +1,25 @@
+drow3_lidar_detector:
+  ros__parameters:
+    input_scan_topic: "/scan_knee"
+
+    marker_topic: "/camera_person_tracker/lidar_detections_marker"
+    poses_topic: "/camera_person_tracker/lidar_detection_poses"
+
+    checkpoint_path: "/home/arpan/masterthesis/models/drow3/checkpoints/drow_pretrained/ckpt_jrdb_ann_drow3_e40.pth"
+    third_party_path: "/home/arpan/masterthesis/third_party/2D_lidar_person_detection/dr_spaam"
+
+    model_type: "DROW3"
+    confidence_threshold: 0.20
+
+    laser_fov_deg: 360.0
+    panoramic_scan: true
+    gpu: false
+    stride: 1
+
+    inference_period_sec: 0.10
+
+    marker_z: 0.20
+    marker_scale: 0.25
+    marker_lifetime_sec: 0.30
+
+    replace_invalid_with_range_max: true

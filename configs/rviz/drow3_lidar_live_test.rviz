@@ -5,12 +5,10 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /Status1
         - /TF1
         - /Livox Cloud1
         - /Knee Scan1
-        - /Camera Target1
-        - /Fused Target1
+        - /DROW3 LiDAR Detections1
       Splitter Ratio: 0.5
     Tree Height: 650
 
@@ -24,7 +22,7 @@ Visualization Manager:
 
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: base_link
+    Fixed Frame: livox_frame
     Frame Rate: 30
 
   Displays:
@@ -34,7 +32,7 @@ Visualization Manager:
       Cell Size: 1
       Plane: XY
       Plane Cell Count: 20
-      Reference Frame: base_link
+      Reference Frame: livox_frame
       Color: 160; 160; 160
       Alpha: 0.5
       Value: true
@@ -50,9 +48,9 @@ Visualization Manager:
       Value: true
 
     - Class: rviz_default_plugins/Axes
-      Name: Base Axes
+      Name: LiDAR Axes
       Enabled: true
-      Reference Frame: base_link
+      Reference Frame: livox_frame
       Length: 0.25
       Radius: 0.015
       Value: true
@@ -66,13 +64,13 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-      Style: Points
+      Style: Flat Squares
       Size (Pixels): 3
       Size (m): 0.02
       Color Transformer: Intensity
       Channel Name: intensity
       Use rainbow: true
-      Alpha: 0.3
+      Alpha: 0.25
       Position Transformer: XYZ
       Selectable: true
       Use Fixed Frame: true
@@ -89,38 +87,24 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
       Style: Flat Squares
-      Size (Pixels): 6
+      Size (Pixels): 5
       Color: 255; 0; 0
-      Alpha: 1
+      Alpha: 0.8
       Decay Time: 0.5
       Use Fixed Frame: true
       Value: true
 
-    - Class: rviz_default_plugins/Marker
-      Name: Camera Target
+    - Class: rviz_default_plugins/MarkerArray
+      Name: DROW3 LiDAR Detections
       Enabled: true
       Marker Topic:
-        Value: /camera_person_tracker/target_marker
+        Value: /camera_person_tracker/lidar_detections_marker
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
       Namespaces:
-        person_tracker: true
-      Queue Size: 100
-      Value: true
-
-    - Class: rviz_default_plugins/Marker
-      Name: Fused Target
-      Enabled: true
-      Marker Topic:
-        Value: /camera_person_tracker/fused_target_marker
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-      Namespaces:
-        fusion: true
+        drow3_lidar_detections: true
       Queue Size: 100
       Value: true
 
@@ -138,21 +122,21 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 5.5
+      Distance: 6
       Focal Point:
         X: 0
         Y: 0
-        Z: 0.5
+        Z: 0
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.6
-      Target Frame: base_link
+      Pitch: 0.8
+      Target Frame: livox_frame
       Yaw: 0.8
 
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 950
-  Width: 1450
-  X: 80
-  Y: 40
+  Height: 900
+  Width: 1400
+  X: 100
+  Y: 60
