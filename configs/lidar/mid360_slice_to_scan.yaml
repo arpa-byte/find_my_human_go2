@@ -2,10 +2,20 @@ lidar_pointcloud_to_scan:
   ros__parameters:
     input_cloud_topic: "/livox/lidar"
     output_scan_topic: "/scan_knee"
+
+    # Raw cloud republish for RViz
     output_cloud_topic: "/livox/lidar_pointcloud2"
 
+    # New corrected / tilt-compensated cloud for RViz
+    output_corrected_cloud_topic: "/livox/lidar_pointcloud2_corrected"
+
+    # Slice is applied AFTER fixed tilt correction
     slice_z_min: -0.20
     slice_z_max: -0.05
+
+    # Fixed tilt correction
+    roll_correction_deg: -5.0
+    pitch_correction_deg: 16.0
 
     angle_min: -3.141592653589793
     angle_max: 3.141592653589793
@@ -13,7 +23,7 @@ lidar_pointcloud_to_scan:
     num_beams: 720
 
     range_min: 0.05
-    range_max: 10.0
+    range_max: 5.0
 
     scan_time: 0.10
     use_inf: true

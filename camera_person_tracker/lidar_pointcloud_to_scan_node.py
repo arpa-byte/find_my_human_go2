@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 
 import math
+from typing import List, Tuple
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import LaserScan, PointCloud2
+from sensor_msgs.msg import LaserScan, PointCloud2, PointField
 from sensor_msgs_py import point_cloud2
+from std_msgs.msg import Header
 
 
 class LidarPointcloudToScanNode(Node):
     """
-    Subscribes to a 3D PointCloud2 topic, extracts a horizontal Z slice,
+    Subscribes to a 3D PointCloud2 topic, applies a fixed tilt correction
+    (roll + pitch), extracts a horizontal Z slice in the corrected frame,
     flattens that slice into a 2D LaserScan, and publishes the scan.
 
-    Also republishes the incoming PointCloud2 to a clean topic so RViz
-    can visualize it without Livox CustomMsg ambiguity.
+    It also publishes:
+    - the incoming raw PointCloud2 to a clean topic
+    - the corrected / tilt-compensated PointCloud2 to another topic
+      for RViz visualization
     """
 
     def __init__(self) -> None:
@@ -26,10 +31,18 @@ class LidarPointcloudToScanNode(Node):
         self.declare_parameter("input_cloud_topic", "/livox/lidar")
         self.declare_parameter("output_scan_topic", "/scan_knee")
         self.declare_parameter("output_cloud_topic", "/livox/lidar_pointcloud2")
+        self.declare_parameter(
+            "output_corrected_cloud_topic",
+            "/livox/lidar_pointcloud2_corrected",
+        )
 
-        # Z slice in LiDAR frame (meters)
-        self.declare_parameter("slice_z_min", -0.60)
+        # Z slice in corrected (leveled) frame, meters
+        self.declare_parameter("slice_z_min", -0.20)
         self.declare_parameter("slice_z_max", -0.05)
+
+        # Fixed tilt correction to apply BEFORE slicing
+        self.declare_parameter("roll_correction_deg", 0.0)
+        self.declare_parameter("pitch_correction_deg", 0.0)
 
         # Angular coverage (radians)
         self.declare_parameter("angle_min", -math.pi)
@@ -57,11 +70,21 @@ class LidarPointcloudToScanNode(Node):
             "output_scan_topic").get_parameter_value().string_value
         self.output_cloud_topic = self.get_parameter(
             "output_cloud_topic").get_parameter_value().string_value
+        self.output_corrected_cloud_topic = self.get_parameter(
+            "output_corrected_cloud_topic").get_parameter_value().string_value
 
         self.slice_z_min = self.get_parameter(
             "slice_z_min").get_parameter_value().double_value
         self.slice_z_max = self.get_parameter(
             "slice_z_max").get_parameter_value().double_value
+
+        self.roll_correction_deg = self.get_parameter(
+            "roll_correction_deg").get_parameter_value().double_value
+        self.pitch_correction_deg = self.get_parameter(
+            "pitch_correction_deg").get_parameter_value().double_value
+
+        self.roll_correction_rad = math.radians(self.roll_correction_deg)
+        self.pitch_correction_rad = math.radians(self.pitch_correction_deg)
 
         self.angle_min = self.get_parameter(
             "angle_min").get_parameter_value().double_value
@@ -97,6 +120,9 @@ class LidarPointcloudToScanNode(Node):
 
         self.scan_pub = self.create_publisher(LaserScan, self.output_scan_topic, 10)
         self.cloud_pub = self.create_publisher(PointCloud2, self.output_cloud_topic, 10)
+        self.corrected_cloud_pub = self.create_publisher(
+            PointCloud2, self.output_corrected_cloud_topic, 10
+        )
 
         self.cloud_sub = self.create_subscription(
             PointCloud2,
@@ -108,23 +134,78 @@ class LidarPointcloudToScanNode(Node):
         self._msg_count = 0
 
         self.get_logger().info("LidarPointcloudToScanNode started.")
-        self.get_logger().info(f"Input cloud topic : {self.input_cloud_topic}")
-        self.get_logger().info(f"Output scan topic : {self.output_scan_topic}")
-        self.get_logger().info(f"Output cloud topic: {self.output_cloud_topic}")
+        self.get_logger().info(f"Input cloud topic         : {self.input_cloud_topic}")
+        self.get_logger().info(f"Output scan topic         : {self.output_scan_topic}")
+        self.get_logger().info(f"Output raw cloud topic    : {self.output_cloud_topic}")
         self.get_logger().info(
-            f"Z slice          : [{self.slice_z_min:.3f}, {self.slice_z_max:.3f}] m")
+            f"Output corrected cloud topic: {self.output_corrected_cloud_topic}")
         self.get_logger().info(
-            f"Angle range      : [{self.angle_min:.3f}, {self.angle_max:.3f}] rad")
-        self.get_logger().info(f"Num beams        : {self.num_beams}")
+            f"Corrected Z slice         : [{self.slice_z_min:.3f}, {self.slice_z_max:.3f}] m")
         self.get_logger().info(
-            f"Range limits     : [{self.range_min:.3f}, {self.range_max:.3f}] m")
+            f"Tilt correction           : roll={self.roll_correction_deg:.2f} deg, "
+            f"pitch={self.pitch_correction_deg:.2f} deg")
+        self.get_logger().info(
+            f"Angle range               : [{self.angle_min:.3f}, {self.angle_max:.3f}] rad")
+        self.get_logger().info(f"Num beams                 : {self.num_beams}")
+        self.get_logger().info(
+            f"Range limits              : [{self.range_min:.3f}, {self.range_max:.3f}] m")
+
+    def apply_tilt_correction(self, x: float, y: float, z: float) -> Tuple[float, float, float]:
+        """
+        Apply fixed roll and pitch correction to a point.
+
+        Rotation order:
+        1) roll correction about X axis
+        2) pitch correction about Y axis
+        """
+
+        # Roll correction about X
+        cr = math.cos(self.roll_correction_rad)
+        sr = math.sin(self.roll_correction_rad)
+
+        x_r = x
+        y_r = cr * y - sr * z
+        z_r = sr * y + cr * z
+
+        # Pitch correction about Y
+        cp = math.cos(self.pitch_correction_rad)
+        sp = math.sin(self.pitch_correction_rad)
+
+        x_p = cp * x_r + sp * z_r
+        y_p = y_r
+        z_p = -sp * x_r + cp * z_r
+
+        return x_p, y_p, z_p
+
+    def build_corrected_cloud(
+        self,
+        header: Header,
+        points_xyz: List[Tuple[float, float, float]],
+    ) -> PointCloud2:
+        """
+        Build a PointCloud2 message containing corrected XYZ points.
+
+        NOTE:
+        We intentionally publish the corrected cloud in the SAME frame_id
+        as the raw cloud for easy RViz comparison. Geometrically this is a
+        pseudo-leveled visualization of the cloud in that frame.
+        """
+        corrected_header = Header()
+        corrected_header.stamp = header.stamp
+        corrected_header.frame_id = header.frame_id
+
+        return point_cloud2.create_cloud_xyz32(corrected_header, points_xyz)
 
     def cloud_callback(self, msg: PointCloud2) -> None:
         """
-        Convert PointCloud2 -> LaserScan using a horizontal Z slice.
-        For each angular bin, keep the nearest valid point.
-        Also republish the raw PointCloud2 to a clean RViz-safe topic.
+        Convert PointCloud2 -> LaserScan using:
+        raw cloud -> fixed tilt correction -> corrected Z slice -> 2D scan
+
+        Also publish:
+        - raw cloud to output_cloud_topic
+        - corrected cloud to output_corrected_cloud_topic
         """
+        # Republish raw cloud
         self.cloud_pub.publish(msg)
 
         if self.use_inf:
@@ -133,7 +214,8 @@ class LidarPointcloudToScanNode(Node):
             ranges = [self.range_max + 1.0] * self.num_beams
 
         total_points = 0
-        slice_points = 0
+        corrected_slice_points = 0
+        corrected_points_xyz: List[Tuple[float, float, float]] = []
 
         try:
             points_iter = point_cloud2.read_points(
@@ -144,13 +226,19 @@ class LidarPointcloudToScanNode(Node):
 
             for p in points_iter:
                 total_points += 1
-                x, y, z = float(p[0]), float(p[1]), float(p[2])
+                x_raw, y_raw, z_raw = float(p[0]), float(p[1]), float(p[2])
 
-                # Keep only the chosen horizontal slice
+                # Apply fixed tilt correction first
+                x, y, z = self.apply_tilt_correction(x_raw, y_raw, z_raw)
+
+                # Save corrected point for visualization
+                corrected_points_xyz.append((x, y, z))
+
+                # Keep only the chosen horizontal slice in corrected frame
                 if z < self.slice_z_min or z > self.slice_z_max:
                     continue
 
-                slice_points += 1
+                corrected_slice_points += 1
 
                 r = math.hypot(x, y)
                 if r < self.range_min or r > self.range_max:
@@ -167,6 +255,13 @@ class LidarPointcloudToScanNode(Node):
 
                 if r < ranges[bin_index]:
                     ranges[bin_index] = r
+
+            # Publish corrected cloud for RViz
+            corrected_cloud_msg = self.build_corrected_cloud(
+                msg.header,
+                corrected_points_xyz,
+            )
+            self.corrected_cloud_pub.publish(corrected_cloud_msg)
 
             scan_msg = LaserScan()
             scan_msg.header = msg.header
@@ -186,8 +281,9 @@ class LidarPointcloudToScanNode(Node):
                 finite_count = sum(math.isfinite(r) for r in ranges)
                 self.get_logger().info(
                     f"Published LaserScan | total_points={total_points} "
-                    f"| slice_points={slice_points} "
-                    f"| occupied_bins={finite_count}/{self.num_beams}"
+                    f"| corrected_slice_points={corrected_slice_points} "
+                    f"| occupied_bins={finite_count}/{self.num_beams} "
+                    f"| corrected_cloud_points={len(corrected_points_xyz)}"
                 )
 
         except Exception as exc:

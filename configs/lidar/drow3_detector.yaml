@@ -9,17 +9,36 @@ drow3_lidar_detector:
     third_party_path: "/home/arpan/masterthesis/third_party/2D_lidar_person_detection/dr_spaam"
 
     model_type: "DROW3"
-    confidence_threshold: 0.20
+
+    # Raise this to remove weak false detections.
+    # Good first test values: 0.50, 0.60, 0.70, 0.80
+    confidence_threshold: 0.60
+
+    # Only publish the top N detections after confidence filtering.
+    # This keeps RViz readable.
+    max_detections: 5
 
     laser_fov_deg: 360.0
     panoramic_scan: true
     gpu: false
     stride: 1
 
-    inference_period_sec: 0.10
-
-    marker_z: 0.20
-    marker_scale: 0.25
-    marker_lifetime_sec: 0.30
+    # CPU inference is around 300-360 ms, so do not request 10 Hz.
+    inference_period_sec: 0.35
 
     replace_invalid_with_range_max: true
+
+    marker_z: 0.15
+    center_marker_scale: 0.12
+    ring_radius: 0.35
+    ring_line_width: 0.04
+    ring_points: 48
+    text_z: 0.45
+    text_scale: 0.22
+    marker_lifetime_sec: 0.45
+
+    publish_center_dot: true
+    publish_confidence_text: true
+
+    log_detections: true
+    log_period_sec: 1.00
