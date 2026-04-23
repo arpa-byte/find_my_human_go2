@@ -46,6 +46,7 @@ setup(
             "rgb_depth_viewer = camera_person_tracker.rgb_depth_viewer_node:main",
             "rgb_person_detector = camera_person_tracker.rgb_person_detector_node:main",
             "simple_detector_node = camera_person_tracker.simple_detector_node:main",
+            "camera_target_persistence_node = camera_person_tracker.camera_target_persistence_node:main",
             "lidar_pointcloud_to_scan = camera_person_tracker.lidar_pointcloud_to_scan_node:main",
             "fusion_coordinator_node = camera_person_tracker.fusion_coordinator_node:main",
             "drow3_lidar_detector_node = camera_person_tracker.drow3_lidar_detector_node:main",
