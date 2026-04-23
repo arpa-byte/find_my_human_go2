@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Dict, List, Optional, Tuple
-
+from typing import Dict, List, Tuple
 import math
 
 import rclpy
@@ -42,6 +41,12 @@ class LidarTrackManagerNode(Node):
             "/camera_person_tracker/lidar_tracks_marker",
         )
 
+        # NEW: separate fusion/data topic with true track positions
+        self.declare_parameter(
+            "output_data_marker_topic",
+            "/camera_person_tracker/lidar_tracks_data",
+        )
+
         self.declare_parameter("association_distance_m", 0.75)
         self.declare_parameter("min_confirmed_hits", 3)
         self.declare_parameter("max_missed_frames", 5)
@@ -53,12 +58,17 @@ class LidarTrackManagerNode(Node):
         self.declare_parameter("track_text_scale", 0.24)
         self.declare_parameter("marker_lifetime_sec", 0.45)
 
+        # NEW: data marker settings for fusion
+        self.declare_parameter("data_marker_z", 0.0)
+        self.declare_parameter("data_marker_scale", 0.10)
+
         self.declare_parameter("publish_tentative_tracks", False)
         self.declare_parameter("log_period_sec", 1.0)
 
         self.input_detection_topic = self.get_parameter("input_detection_topic").value
         self.output_tracks_topic = self.get_parameter("output_tracks_topic").value
         self.output_marker_topic = self.get_parameter("output_marker_topic").value
+        self.output_data_marker_topic = self.get_parameter("output_data_marker_topic").value
 
         self.association_distance_m = float(
             self.get_parameter("association_distance_m").value
@@ -72,6 +82,9 @@ class LidarTrackManagerNode(Node):
         self.track_text_z = float(self.get_parameter("track_text_z").value)
         self.track_text_scale = float(self.get_parameter("track_text_scale").value)
         self.marker_lifetime_sec = float(self.get_parameter("marker_lifetime_sec").value)
+
+        self.data_marker_z = float(self.get_parameter("data_marker_z").value)
+        self.data_marker_scale = float(self.get_parameter("data_marker_scale").value)
 
         self.publish_tentative_tracks = bool(
             self.get_parameter("publish_tentative_tracks").value
@@ -88,18 +101,26 @@ class LidarTrackManagerNode(Node):
         self.tracks_pub = self.create_publisher(PoseArray, self.output_tracks_topic, 10)
         self.marker_pub = self.create_publisher(MarkerArray, self.output_marker_topic, 10)
 
+        # NEW: fusion/data publisher
+        self.data_marker_pub = self.create_publisher(
+            MarkerArray,
+            self.output_data_marker_topic,
+            10,
+        )
+
         self.tracks: Dict[int, Track] = {}
         self.next_track_id = 1
         self.last_log_time = self.get_clock().now()
 
         self.get_logger().info("LidarTrackManagerNode started.")
-        self.get_logger().info(f"Input detections : {self.input_detection_topic}")
-        self.get_logger().info(f"Output tracks    : {self.output_tracks_topic}")
-        self.get_logger().info(f"Output markers   : {self.output_marker_topic}")
-        self.get_logger().info(f"Association dist : {self.association_distance_m:.2f} m")
-        self.get_logger().info(f"Confirm hits     : {self.min_confirmed_hits}")
-        self.get_logger().info(f"Max missed       : {self.max_missed_frames}")
-        self.get_logger().info(f"Track timeout    : {self.track_timeout_sec:.2f} s")
+        self.get_logger().info(f"Input detections   : {self.input_detection_topic}")
+        self.get_logger().info(f"Output tracks      : {self.output_tracks_topic}")
+        self.get_logger().info(f"Output markers     : {self.output_marker_topic}")
+        self.get_logger().info(f"Output data markers: {self.output_data_marker_topic}")
+        self.get_logger().info(f"Association dist   : {self.association_distance_m:.2f} m")
+        self.get_logger().info(f"Confirm hits       : {self.min_confirmed_hits}")
+        self.get_logger().info(f"Max missed         : {self.max_missed_frames}")
+        self.get_logger().info(f"Track timeout      : {self.track_timeout_sec:.2f} s")
 
     def stamp_to_sec(self, msg_stamp) -> float:
         return float(msg_stamp.sec) + float(msg_stamp.nanosec) * 1e-9
@@ -193,7 +214,7 @@ class LidarTrackManagerNode(Node):
 
         return pose_array
 
-    def build_marker_array(self, header, visible_tracks: List[Track]) -> MarkerArray:
+    def build_display_marker_array(self, header, visible_tracks: List[Track]) -> MarkerArray:
         marker_array = MarkerArray()
 
         clear_marker = Marker()
@@ -201,7 +222,7 @@ class LidarTrackManagerNode(Node):
         clear_marker.action = Marker.DELETEALL
         marker_array.markers.append(clear_marker)
 
-        for idx, track in enumerate(visible_tracks):
+        for track in visible_tracks:
             base_id = track.track_id * 10
 
             center = Marker()
@@ -258,6 +279,47 @@ class LidarTrackManagerNode(Node):
 
         return marker_array
 
+    def build_data_marker_array(self, header, visible_tracks: List[Track]) -> MarkerArray:
+        """
+        Data-plane markers for fusion.
+        These are NOT for pretty RViz display.
+        They carry the real track position and track ID directly.
+        """
+        marker_array = MarkerArray()
+
+        clear_marker = Marker()
+        clear_marker.header = header
+        clear_marker.action = Marker.DELETEALL
+        marker_array.markers.append(clear_marker)
+
+        for track in visible_tracks:
+            marker = Marker()
+            marker.header = header
+            marker.ns = "lidar_tracks_data"
+            marker.id = track.track_id
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+
+            marker.pose.position.x = track.x
+            marker.pose.position.y = track.y
+            marker.pose.position.z = self.data_marker_z
+            marker.pose.orientation.w = 1.0
+
+            marker.scale.x = self.data_marker_scale
+            marker.scale.y = self.data_marker_scale
+            marker.scale.z = self.data_marker_scale
+
+            # invisible-ish in RViz, but still a valid data carrier
+            marker.color.r = 0.2
+            marker.color.g = 1.0
+            marker.color.b = 0.2
+            marker.color.a = 0.15
+
+            self.make_marker_lifetime(marker)
+            marker_array.markers.append(marker)
+
+        return marker_array
+
     def detection_callback(self, msg: PoseArray) -> None:
         stamp_sec = self.stamp_to_sec(msg.header.stamp)
         if stamp_sec <= 0.0:
@@ -291,10 +353,12 @@ class LidarTrackManagerNode(Node):
         visible_tracks.sort(key=lambda t: t.track_id)
 
         pose_array = self.build_tracks_pose_array(msg.header, visible_tracks)
-        marker_array = self.build_marker_array(msg.header, visible_tracks)
+        display_marker_array = self.build_display_marker_array(msg.header, visible_tracks)
+        data_marker_array = self.build_data_marker_array(msg.header, visible_tracks)
 
         self.tracks_pub.publish(pose_array)
-        self.marker_pub.publish(marker_array)
+        self.marker_pub.publish(display_marker_array)
+        self.data_marker_pub.publish(data_marker_array)
 
         if self.should_log():
             confirmed_count = sum(1 for t in self.tracks.values() if t.confirmed)

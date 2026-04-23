@@ -33,6 +33,10 @@ setup(
             os.path.join("share", package_name, "configs", "lidar"),
             glob("configs/lidar/*.yaml"),
         ),
+        (
+            os.path.join("share", package_name, "configs", "fusion"),
+            glob("configs/fusion/*.yaml"),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -51,7 +55,7 @@ setup(
             "fusion_coordinator_node = camera_person_tracker.fusion_coordinator_node:main",
             "drow3_lidar_detector_node = camera_person_tracker.drow3_lidar_detector_node:main",
             "lidar_track_manager_node = camera_person_tracker.lidar_track_manager_node:main",
-
+            "fused_target_tracker_node = camera_person_tracker.fused_target_tracker_node:main",
 
         ],
     },

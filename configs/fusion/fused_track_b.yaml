@@ -1,0 +1,23 @@
+fused_target_tracker:
+  ros__parameters:
+    world_frame: "base_link"
+
+    camera_target_marker_topic: "/camera_person_tracker/target_marker"
+    lidar_tracks_data_topic: "/camera_person_tracker/lidar_tracks_data"
+    fused_marker_topic: "/camera_person_tracker/fused_target_marker_b"
+
+    fused_target_frame: "fused_target"
+
+    publish_period_sec: 0.10
+    camera_timeout_sec: 0.60
+    lidar_timeout_sec: 0.80
+
+    association_gate_m: 1.00
+    reacquire_gate_m: 1.20
+    lock_memory_sec: 1.50
+
+    marker_scale_m: 0.24
+    text_scale_m: 0.22
+    marker_lifetime_sec: 0.30
+
+    log_period_sec: 0.75
