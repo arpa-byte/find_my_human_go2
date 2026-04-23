@@ -1,0 +1,19 @@
+lidar_track_manager:
+  ros__parameters:
+    input_detection_topic: "/camera_person_tracker/lidar_detection_poses"
+    output_tracks_topic: "/camera_person_tracker/lidar_tracked_poses"
+    output_marker_topic: "/camera_person_tracker/lidar_tracks_marker"
+
+    association_distance_m: 0.75
+    min_confirmed_hits: 3
+    max_missed_frames: 5
+    track_timeout_sec: 1.5
+
+    track_marker_z: 0.20
+    track_marker_scale: 0.20
+    track_text_z: 0.55
+    track_text_scale: 0.24
+    marker_lifetime_sec: 0.45
+
+    publish_tentative_tracks: false
+    log_period_sec: 1.0

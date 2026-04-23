@@ -49,6 +49,8 @@ setup(
             "lidar_pointcloud_to_scan = camera_person_tracker.lidar_pointcloud_to_scan_node:main",
             "fusion_coordinator_node = camera_person_tracker.fusion_coordinator_node:main",
             "drow3_lidar_detector_node = camera_person_tracker.drow3_lidar_detector_node:main",
+            "lidar_track_manager_node = camera_person_tracker.lidar_track_manager_node:main",
+
 
         ],
     },

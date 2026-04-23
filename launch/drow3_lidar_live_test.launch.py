@@ -23,6 +23,13 @@ def generate_launch_description():
         "drow3_detector.yaml",
     )
 
+    track_config = os.path.join(
+        pkg_share,
+        "configs",
+        "lidar",
+        "lidar_track_manager.yaml",
+    )
+
     rviz_config = os.path.join(
         pkg_share,
         "configs",
@@ -88,6 +95,14 @@ def generate_launch_description():
             name="drow3_lidar_detector",
             output="screen",
             parameters=[drow3_config],
+        ),
+
+        Node(
+            package="camera_person_tracker",
+            executable="lidar_track_manager_node",
+            name="lidar_track_manager",
+            output="screen",
+            parameters=[track_config],
         ),
 
         Node(

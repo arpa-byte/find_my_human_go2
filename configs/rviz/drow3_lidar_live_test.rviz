@@ -9,6 +9,7 @@ Panels:
         - /Livox Cloud1
         - /Knee Scan1
         - /DROW3 LiDAR Detections1
+        - /LiDAR Tracks1
       Splitter Ratio: 0.5
     Tree Height: 650
 
@@ -107,6 +108,21 @@ Visualization Manager:
         drow3_detection_rings: true
         drow3_detection_centers: true
         drow3_detection_scores: true
+      Queue Size: 100
+      Value: true
+
+    - Class: rviz_default_plugins/MarkerArray
+      Name: LiDAR Tracks
+      Enabled: true
+      Marker Topic:
+        Value: /camera_person_tracker/lidar_tracks_marker
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Namespaces:
+        lidar_tracks: true
+        lidar_track_ids: true
       Queue Size: 100
       Value: true
 
