@@ -103,7 +103,7 @@ class LidarTrackManagerNode(Node):
 
         # NEW: fusion/data publisher
         self.data_marker_pub = self.create_publisher(
-            MarkerArray,
+            Marker,
             self.output_data_marker_topic,
             10,
         )
@@ -279,47 +279,6 @@ class LidarTrackManagerNode(Node):
 
         return marker_array
 
-    def build_data_marker_array(self, header, visible_tracks: List[Track]) -> MarkerArray:
-        """
-        Data-plane markers for fusion.
-        These are NOT for pretty RViz display.
-        They carry the real track position and track ID directly.
-        """
-        marker_array = MarkerArray()
-
-        clear_marker = Marker()
-        clear_marker.header = header
-        clear_marker.action = Marker.DELETEALL
-        marker_array.markers.append(clear_marker)
-
-        for track in visible_tracks:
-            marker = Marker()
-            marker.header = header
-            marker.ns = "lidar_tracks_data"
-            marker.id = track.track_id
-            marker.type = Marker.SPHERE
-            marker.action = Marker.ADD
-
-            marker.pose.position.x = track.x
-            marker.pose.position.y = track.y
-            marker.pose.position.z = self.data_marker_z
-            marker.pose.orientation.w = 1.0
-
-            marker.scale.x = self.data_marker_scale
-            marker.scale.y = self.data_marker_scale
-            marker.scale.z = self.data_marker_scale
-
-            # invisible-ish in RViz, but still a valid data carrier
-            marker.color.r = 0.2
-            marker.color.g = 1.0
-            marker.color.b = 0.2
-            marker.color.a = 0.15
-
-            self.make_marker_lifetime(marker)
-            marker_array.markers.append(marker)
-
-        return marker_array
-
     def detection_callback(self, msg: PoseArray) -> None:
         stamp_sec = self.stamp_to_sec(msg.header.stamp)
         if stamp_sec <= 0.0:
@@ -354,11 +313,36 @@ class LidarTrackManagerNode(Node):
 
         pose_array = self.build_tracks_pose_array(msg.header, visible_tracks)
         display_marker_array = self.build_display_marker_array(msg.header, visible_tracks)
-        data_marker_array = self.build_data_marker_array(msg.header, visible_tracks)
 
         self.tracks_pub.publish(pose_array)
         self.marker_pub.publish(display_marker_array)
-        self.data_marker_pub.publish(data_marker_array)
+
+        # Publish one Marker per confirmed track so fused_target_tracker
+        # receives individual Marker messages matching its subscription type
+        for track in visible_tracks:
+            data_marker = Marker()
+            data_marker.header = msg.header
+            data_marker.ns = "lidar_tracks_data"
+            data_marker.id = track.track_id
+            data_marker.type = Marker.SPHERE
+            data_marker.action = Marker.ADD
+
+            data_marker.pose.position.x = track.x
+            data_marker.pose.position.y = track.y
+            data_marker.pose.position.z = self.data_marker_z
+            data_marker.pose.orientation.w = 1.0
+
+            data_marker.scale.x = self.data_marker_scale
+            data_marker.scale.y = self.data_marker_scale
+            data_marker.scale.z = self.data_marker_scale
+
+            data_marker.color.r = 0.2
+            data_marker.color.g = 1.0
+            data_marker.color.b = 0.2
+            data_marker.color.a = 0.15
+
+            self.make_marker_lifetime(data_marker)
+            self.data_marker_pub.publish(data_marker)
 
         if self.should_log():
             confirmed_count = sum(1 for t in self.tracks.values() if t.confirmed)

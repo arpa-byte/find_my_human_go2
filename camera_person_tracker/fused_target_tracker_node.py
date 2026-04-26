@@ -9,7 +9,7 @@ from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformBroadcaster, TransformException, TransformListener
-from visualization_msgs.msg import Marker, MarkerArray
+from visualization_msgs.msg import Marker
 
 
 @dataclass
@@ -36,18 +36,14 @@ class FusedTargetTrackerNode(Node):
         super().__init__("fused_target_tracker")
 
         self.declare_parameter("world_frame", "base_link")
-
         self.declare_parameter(
             "camera_target_marker_topic",
             "/camera_person_tracker/target_marker",
         )
-
-        # IMPORTANT: use data topic, not RViz display markers
         self.declare_parameter(
             "lidar_tracks_data_topic",
             "/camera_person_tracker/lidar_tracks_data",
         )
-
         self.declare_parameter(
             "fused_marker_topic",
             "/camera_person_tracker/fused_target_marker_b",
@@ -56,9 +52,8 @@ class FusedTargetTrackerNode(Node):
 
         self.declare_parameter("publish_period_sec", 0.10)
         self.declare_parameter("camera_timeout_sec", 0.60)
-        self.declare_parameter("lidar_timeout_sec", 5.0)
+        self.declare_parameter("lidar_timeout_sec", 5.00)
 
-        # Slightly more forgiving in XY-only association
         self.declare_parameter("association_gate_m", 1.00)
         self.declare_parameter("reacquire_gate_m", 1.20)
         self.declare_parameter("lock_memory_sec", 1.50)
@@ -68,10 +63,15 @@ class FusedTargetTrackerNode(Node):
         self.declare_parameter("marker_lifetime_sec", 0.30)
 
         self.declare_parameter("log_period_sec", 0.75)
+        self.declare_parameter("debug_match_logging", True)
 
         self.world_frame = self.get_parameter("world_frame").value
-        self.camera_target_marker_topic = self.get_parameter("camera_target_marker_topic").value
-        self.lidar_tracks_data_topic = self.get_parameter("lidar_tracks_data_topic").value
+        self.camera_target_marker_topic = self.get_parameter(
+            "camera_target_marker_topic"
+        ).value
+        self.lidar_tracks_data_topic = self.get_parameter(
+            "lidar_tracks_data_topic"
+        ).value
         self.fused_marker_topic = self.get_parameter("fused_marker_topic").value
         self.fused_target_frame = self.get_parameter("fused_target_frame").value
 
@@ -88,6 +88,7 @@ class FusedTargetTrackerNode(Node):
         self.marker_lifetime_sec = float(self.get_parameter("marker_lifetime_sec").value)
 
         self.log_period_sec = float(self.get_parameter("log_period_sec").value)
+        self.debug_match_logging = bool(self.get_parameter("debug_match_logging").value)
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -112,14 +113,13 @@ class FusedTargetTrackerNode(Node):
         )
 
         self.create_subscription(
-            MarkerArray,
+            Marker,
             self.lidar_tracks_data_topic,
             self.lidar_tracks_data_callback,
             10,
         )
 
-        self.fused_marker_pub = self.create_publisher(MarkerArray, self.fused_marker_topic, 10)
-
+        self.fused_marker_pub = self.create_publisher(Marker, self.fused_marker_topic, 10)
         self.timer = self.create_timer(self.publish_period_sec, self.update)
 
         self.get_logger().info("FusedTargetTrackerNode started.")
@@ -152,12 +152,16 @@ class FusedTargetTrackerNode(Node):
             (self.marker_lifetime_sec - int(self.marker_lifetime_sec)) * 1e9
         )
 
-    def distance_xy(
+    def distance_3d(
         self,
-        a: Tuple[float, float],
-        b: Tuple[float, float],
+        a: Tuple[float, float, float],
+        b: Tuple[float, float, float],
     ) -> float:
-        return math.hypot(a[0] - b[0], a[1] - b[1])
+        return math.sqrt(
+            (a[0] - b[0]) ** 2 +
+            (a[1] - b[1]) ** 2 +
+            (a[2] - b[2]) ** 2
+        )
 
     def rotate_point_by_quaternion(
         self,
@@ -229,7 +233,6 @@ class FusedTargetTrackerNode(Node):
             float(msg.pose.position.y),
             float(msg.pose.position.z),
         )
-
         if world_xyz is None:
             return
 
@@ -237,62 +240,51 @@ class FusedTargetTrackerNode(Node):
         if stamp_sec <= 0.0:
             stamp_sec = self.now_sec()
 
-        visible = self.marker_is_camera_visible(msg)
-        remembered = self.marker_is_camera_remembered(msg)
-
         self.latest_camera_obs = CameraObservation(
             x=world_xyz[0],
             y=world_xyz[1],
             z=world_xyz[2],
-            visible=visible,
-            remembered=remembered,
+            visible=self.marker_is_camera_visible(msg),
+            remembered=self.marker_is_camera_remembered(msg),
             stamp_sec=stamp_sec,
         )
 
-    def lidar_tracks_data_callback(self, msg: MarkerArray) -> None:
-        new_tracks: Dict[int, LidarTrackObservation] = {}
+    def lidar_tracks_data_callback(self, msg: Marker) -> None:
+        """
+        Expects one marker per LiDAR track on /camera_person_tracker/lidar_tracks_data.
+        Marker ID = track ID.
+        """
+        if msg.action != Marker.ADD:
+            return
 
-        for marker in msg.markers:
-            if marker.action != Marker.ADD:
-                continue
+        world_xyz = self.transform_point_to_world(
+            msg.header.frame_id,
+            float(msg.pose.position.x),
+            float(msg.pose.position.y),
+            float(msg.pose.position.z),
+        )
+        if world_xyz is None:
+            return
 
-            if marker.ns != "lidar_tracks_data":
-                continue
+        stamp_sec = self.stamp_to_sec(msg.header.stamp)
+        if stamp_sec <= 0.0:
+            stamp_sec = self.now_sec()
 
-            track_id = int(marker.id)
+        track_id = int(msg.id)
 
-            world_xyz = self.transform_point_to_world(
-                marker.header.frame_id,
-                float(marker.pose.position.x),
-                float(marker.pose.position.y),
-                float(marker.pose.position.z),
-            )
-
-            if world_xyz is None:
-                continue
-
-            stamp_sec = self.stamp_to_sec(marker.header.stamp)
-            if stamp_sec <= 0.0:
-                stamp_sec = self.now_sec()
-
-            new_tracks[track_id] = LidarTrackObservation(
-                track_id=track_id,
-                x=world_xyz[0],
-                y=world_xyz[1],
-                z=world_xyz[2],
-                stamp_sec=stamp_sec,
-            )
-
-        self.latest_lidar_tracks = new_tracks
+        self.latest_lidar_tracks[track_id] = LidarTrackObservation(
+            track_id=track_id,
+            x=world_xyz[0],
+            y=world_xyz[1],
+            z=world_xyz[2],
+            stamp_sec=stamp_sec,
+        )
 
     def get_fresh_camera_observation(self) -> Optional[CameraObservation]:
         if self.latest_camera_obs is None:
             return None
-
-        age = self.now_sec() - self.latest_camera_obs.stamp_sec
-        if age > self.camera_timeout_sec:
+        if (self.now_sec() - self.latest_camera_obs.stamp_sec) > self.camera_timeout_sec:
             return None
-
         return self.latest_camera_obs
 
     def get_fresh_lidar_tracks(self) -> Dict[int, LidarTrackObservation]:
@@ -305,17 +297,18 @@ class FusedTargetTrackerNode(Node):
 
         return fresh_tracks
 
-    def nearest_lidar_track_to_point_xy(
+    def nearest_lidar_track_to_point(
         self,
         x: float,
         y: float,
+        z: float,
         tracks: Dict[int, LidarTrackObservation],
     ) -> Tuple[Optional[int], float]:
         best_track_id = None
         best_dist = float("inf")
 
         for track_id, track in tracks.items():
-            dist = self.distance_xy((x, y), (track.x, track.y))
+            dist = self.distance_3d((x, y, z), (track.x, track.y, track.z))
             if dist < best_dist:
                 best_dist = dist
                 best_track_id = track_id
@@ -339,188 +332,119 @@ class FusedTargetTrackerNode(Node):
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = self.world_frame
         t.child_frame_id = self.fused_target_frame
-
         t.transform.translation.x = x
         t.transform.translation.y = y
         t.transform.translation.z = z
         t.transform.rotation.w = 1.0
-
         self.tf_broadcaster.sendTransform(t)
 
-    def publish_fused_markers(
+    def publish_fused_marker(
         self,
         state: str,
         fused_xyz: Optional[Tuple[float, float, float]],
-        camera_xyz: Optional[Tuple[float, float, float]],
-        lidar_xyz: Optional[Tuple[float, float, float]],
         locked_track_id: Optional[int],
     ) -> None:
-        marker_array = MarkerArray()
-
-        clear_marker = Marker()
-        clear_marker.header.stamp = self.get_clock().now().to_msg()
-        clear_marker.header.frame_id = self.world_frame
-        clear_marker.action = Marker.DELETEALL
-        marker_array.markers.append(clear_marker)
-
         if fused_xyz is None:
-            self.fused_marker_pub.publish(marker_array)
             return
 
-        x, y, z = fused_xyz
-
-        sphere = Marker()
-        sphere.header.stamp = self.get_clock().now().to_msg()
-        sphere.header.frame_id = self.world_frame
-        sphere.ns = "fusion_b"
-        sphere.id = 0
-        sphere.type = Marker.SPHERE
-        sphere.action = Marker.ADD
-        sphere.pose.position.x = x
-        sphere.pose.position.y = y
-        sphere.pose.position.z = z
-        sphere.pose.orientation.w = 1.0
-        sphere.scale.x = self.marker_scale_m
-        sphere.scale.y = self.marker_scale_m
-        sphere.scale.z = self.marker_scale_m
+        marker = Marker()
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.header.frame_id = self.world_frame
+        marker.ns = "fusion_b"
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = fused_xyz[0]
+        marker.pose.position.y = fused_xyz[1]
+        marker.pose.position.z = fused_xyz[2]
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = self.marker_scale_m
+        marker.scale.y = self.marker_scale_m
+        marker.scale.z = self.marker_scale_m
 
         if state == "FUSED":
-            sphere.color.r = 0.0
-            sphere.color.g = 1.0
-            sphere.color.b = 1.0
-            sphere.color.a = 0.95
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 1.0
+            marker.color.a = 0.95
         elif state == "CAMERA_ONLY":
-            sphere.color.r = 1.0
-            sphere.color.g = 0.0
-            sphere.color.b = 1.0
-            sphere.color.a = 0.95
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 1.0
+            marker.color.a = 0.95
         elif state == "LIDAR_ONLY":
-            sphere.color.r = 1.0
-            sphere.color.g = 1.0
-            sphere.color.b = 0.0
-            sphere.color.a = 0.95
+            marker.color.r = 1.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+            marker.color.a = 0.95
         else:
-            sphere.color.r = 0.6
-            sphere.color.g = 0.6
-            sphere.color.b = 0.6
-            sphere.color.a = 0.80
+            marker.color.r = 0.6
+            marker.color.g = 0.6
+            marker.color.b = 0.6
+            marker.color.a = 0.8
 
-        self.make_marker_lifetime(sphere)
-        marker_array.markers.append(sphere)
+        text = f"{state} | lidar_id={locked_track_id if locked_track_id is not None else 'None'}"
+        marker.text = text
 
-        text = Marker()
-        text.header.stamp = self.get_clock().now().to_msg()
-        text.header.frame_id = self.world_frame
-        text.ns = "fusion_b_text"
-        text.id = 1
-        text.type = Marker.TEXT_VIEW_FACING
-        text.action = Marker.ADD
-        text.pose.position.x = x
-        text.pose.position.y = y
-        text.pose.position.z = z + 0.45
-        text.pose.orientation.w = 1.0
-        text.scale.z = self.text_scale_m
-        text.color.r = 1.0
-        text.color.g = 1.0
-        text.color.b = 1.0
-        text.color.a = 0.98
+        self.make_marker_lifetime(marker)
+        self.fused_marker_pub.publish(marker)
 
-        lidar_id_text = "None" if locked_track_id is None else str(locked_track_id)
-        text.text = f"{state} | lidar_id={lidar_id_text}"
-
-        self.make_marker_lifetime(text)
-        marker_array.markers.append(text)
-
-        if camera_xyz is not None:
-            cam = Marker()
-            cam.header.stamp = self.get_clock().now().to_msg()
-            cam.header.frame_id = self.world_frame
-            cam.ns = "fusion_b_debug"
-            cam.id = 10
-            cam.type = Marker.SPHERE
-            cam.action = Marker.ADD
-            cam.pose.position.x = camera_xyz[0]
-            cam.pose.position.y = camera_xyz[1]
-            cam.pose.position.z = camera_xyz[2]
-            cam.pose.orientation.w = 1.0
-            cam.scale.x = 0.12
-            cam.scale.y = 0.12
-            cam.scale.z = 0.12
-            cam.color.r = 1.0
-            cam.color.g = 0.0
-            cam.color.b = 0.0
-            cam.color.a = 0.85
-            self.make_marker_lifetime(cam)
-            marker_array.markers.append(cam)
-
-        if lidar_xyz is not None:
-            lid = Marker()
-            lid.header.stamp = self.get_clock().now().to_msg()
-            lid.header.frame_id = self.world_frame
-            lid.ns = "fusion_b_debug"
-            lid.id = 11
-            lid.type = Marker.SPHERE
-            lid.action = Marker.ADD
-            lid.pose.position.x = lidar_xyz[0]
-            lid.pose.position.y = lidar_xyz[1]
-            lid.pose.position.z = lidar_xyz[2]
-            lid.pose.orientation.w = 1.0
-            lid.scale.x = 0.12
-            lid.scale.y = 0.12
-            lid.scale.z = 0.12
-            lid.color.r = 1.0
-            lid.color.g = 1.0
-            lid.color.b = 0.0
-            lid.color.a = 0.85
-            self.make_marker_lifetime(lid)
-            marker_array.markers.append(lid)
-
-        self.fused_marker_pub.publish(marker_array)
-
-    def maybe_log_status(
+    def maybe_log_match_debug(
         self,
-        state: str,
         camera_obs: Optional[CameraObservation],
-        locked_track: Optional[LidarTrackObservation],
-        fused_xyz: Optional[Tuple[float, float, float]],
+        lidar_tracks: Dict[int, LidarTrackObservation],
     ) -> None:
+        if not self.debug_match_logging:
+            return
         if not self.should_log():
             return
 
-        camera_status = "NONE"
-        if camera_obs is not None:
-            if camera_obs.visible:
-                camera_status = "ACTIVE"
-            elif camera_obs.remembered:
-                camera_status = "REMEMBERED"
-
-        locked_id = "None" if self.locked_lidar_track_id is None else str(self.locked_lidar_track_id)
-
-        if fused_xyz is None:
+        if camera_obs is None:
+            self.get_logger().info("[FusionB DEBUG] camera_target=None")
+        else:
+            cam_state = "ACTIVE" if camera_obs.visible else ("REMEMBERED" if camera_obs.remembered else "UNKNOWN")
             self.get_logger().info(
-                f"[FusionB] state={state} | camera={camera_status} | locked_lidar_id={locked_id}"
+                f"[FusionB DEBUG] camera_target state={cam_state} "
+                f"pos=({camera_obs.x:.2f}, {camera_obs.y:.2f}, {camera_obs.z:.2f})"
             )
+
+        if not lidar_tracks:
+            self.get_logger().info("[FusionB DEBUG] lidar_tracks=None")
             return
 
-        fx, fy, fz = fused_xyz
-        msg = (
-            f"[FusionB] state={state} | fused=({fx:.2f}, {fy:.2f}, {fz:.2f}) "
-            f"| camera={camera_status} | locked_lidar_id={locked_id}"
-        )
-
-        if camera_obs is not None:
-            msg += f" | cam=({camera_obs.x:.2f}, {camera_obs.y:.2f}, {camera_obs.z:.2f})"
-
-        if locked_track is not None:
-            msg += (
-                f" | lidar=({locked_track.x:.2f}, {locked_track.y:.2f}, {locked_track.z:.2f})"
+        sorted_tracks = sorted(lidar_tracks.values(), key=lambda t: t.track_id)
+        for track in sorted_tracks:
+            self.get_logger().info(
+                f"[FusionB DEBUG] lidar_track id={track.track_id} "
+                f"pos=({track.x:.2f}, {track.y:.2f}, {track.z:.2f})"
             )
 
-        self.get_logger().info(msg)
+        if camera_obs is not None:
+            best_track_id, best_dist = self.nearest_lidar_track_to_point(
+                camera_obs.x,
+                camera_obs.y,
+                camera_obs.z,
+                lidar_tracks,
+            )
+
+            if best_track_id is not None:
+                best_track = lidar_tracks[best_track_id]
+                gate_ok = best_dist <= self.association_gate_m
+                self.get_logger().info(
+                    f"[FusionB DEBUG] nearest_lidar_to_camera "
+                    f"id={best_track_id} "
+                    f"dist={best_dist:.3f} m "
+                    f"gate={self.association_gate_m:.3f} "
+                    f"pass={gate_ok} "
+                    f"| cam=({camera_obs.x:.2f}, {camera_obs.y:.2f}, {camera_obs.z:.2f}) "
+                    f"| lidar=({best_track.x:.2f}, {best_track.y:.2f}, {best_track.z:.2f})"
+                )
 
     def update(self) -> None:
         camera_obs = self.get_fresh_camera_observation()
         lidar_tracks = self.get_fresh_lidar_tracks()
+
+        self.maybe_log_match_debug(camera_obs, lidar_tracks)
 
         camera_active = camera_obs is not None and camera_obs.visible
         camera_remembered = camera_obs is not None and camera_obs.remembered
@@ -534,14 +458,13 @@ class FusedTargetTrackerNode(Node):
 
         if self.locked_lidar_track_id is None:
             if camera_active:
-                best_track_id, best_dist = self.nearest_lidar_track_to_point_xy(
-                    camera_obs.x, camera_obs.y, lidar_tracks
+                best_track_id, best_dist = self.nearest_lidar_track_to_point(
+                    camera_obs.x, camera_obs.y, camera_obs.z, lidar_tracks
                 )
 
                 if best_track_id is not None and best_dist <= self.association_gate_m:
                     self.locked_lidar_track_id = best_track_id
                     self.update_lock_timestamp()
-                    locked_track = lidar_tracks.get(best_track_id)
                     state = "FUSED"
                     fused_xyz = (camera_obs.x, camera_obs.y, camera_obs.z)
                 else:
@@ -559,9 +482,9 @@ class FusedTargetTrackerNode(Node):
                 self.update_lock_timestamp()
 
                 if camera_active:
-                    dist = self.distance_xy(
-                        (camera_obs.x, camera_obs.y),
-                        (locked_track.x, locked_track.y),
+                    dist = self.distance_3d(
+                        (camera_obs.x, camera_obs.y, camera_obs.z),
+                        (locked_track.x, locked_track.y, locked_track.z),
                     )
 
                     if dist <= self.reacquire_gate_m:
@@ -570,21 +493,19 @@ class FusedTargetTrackerNode(Node):
                     else:
                         state = "CAMERA_ONLY"
                         fused_xyz = (camera_obs.x, camera_obs.y, camera_obs.z)
-
                 else:
                     state = "LIDAR_ONLY"
                     fused_xyz = (locked_track.x, locked_track.y, locked_track.z)
 
             else:
                 if camera_active:
-                    best_track_id, best_dist = self.nearest_lidar_track_to_point_xy(
-                        camera_obs.x, camera_obs.y, lidar_tracks
+                    best_track_id, best_dist = self.nearest_lidar_track_to_point(
+                        camera_obs.x, camera_obs.y, camera_obs.z, lidar_tracks
                     )
 
                     if best_track_id is not None and best_dist <= self.reacquire_gate_m:
                         self.locked_lidar_track_id = best_track_id
                         self.update_lock_timestamp()
-                        locked_track = lidar_tracks.get(best_track_id)
                         state = "FUSED"
                         fused_xyz = (camera_obs.x, camera_obs.y, camera_obs.z)
                     else:
@@ -605,24 +526,22 @@ class FusedTargetTrackerNode(Node):
         if fused_xyz is not None:
             self.last_fused_xyz = fused_xyz
             self.publish_fused_tf(fused_xyz[0], fused_xyz[1], fused_xyz[2])
+            self.publish_fused_marker(state, fused_xyz, self.locked_lidar_track_id)
 
-        camera_xyz = None if camera_obs is None else (camera_obs.x, camera_obs.y, camera_obs.z)
-        lidar_xyz = None if locked_track is None else (locked_track.x, locked_track.y, locked_track.z)
+        self.current_state = state
 
-        self.publish_fused_markers(
-            state=state,
-            fused_xyz=fused_xyz,
-            camera_xyz=camera_xyz,
-            lidar_xyz=lidar_xyz,
-            locked_track_id=self.locked_lidar_track_id,
-        )
-
-        self.maybe_log_status(
-            state=state,
-            camera_obs=camera_obs,
-            locked_track=locked_track,
-            fused_xyz=fused_xyz,
-        )
+        locked_id = "None" if self.locked_lidar_track_id is None else str(self.locked_lidar_track_id)
+        if fused_xyz is not None:
+            self.get_logger().info(
+                f"[FusionB] state={state} | "
+                f"fused=({fused_xyz[0]:.2f}, {fused_xyz[1]:.2f}, {fused_xyz[2]:.2f}) | "
+                f"camera={'ACTIVE' if camera_active else ('REMEMBERED' if camera_remembered else 'NONE')} | "
+                f"locked_lidar_id={locked_id}"
+            )
+        else:
+            self.get_logger().info(
+                f"[FusionB] state={state} | camera={'ACTIVE' if camera_active else ('REMEMBERED' if camera_remembered else 'NONE')} | locked_lidar_id={locked_id}"
+            )
 
 
 def main(args=None) -> None:

@@ -142,7 +142,7 @@ Visualization Manager:
       Queue Size: 100
       Value: true
 
-    - Class: rviz_default_plugins/MarkerArray
+    - Class: rviz_default_plugins/Marker
       Name: Fused Target B
       Enabled: true
       Marker Topic:
@@ -153,8 +153,6 @@ Visualization Manager:
         Reliability Policy: Reliable
       Namespaces:
         fusion_b: true
-        fusion_b_text: true
-        fusion_b_debug: true
       Queue Size: 100
       Value: true
 
