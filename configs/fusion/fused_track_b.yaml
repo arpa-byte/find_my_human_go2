@@ -10,7 +10,7 @@ fused_target_tracker:
 
     publish_period_sec: 0.10
     camera_timeout_sec: 0.60
-    lidar_timeout_sec: 0.80
+    lidar_timeout_sec: 5.00
 
     association_gate_m: 1.00
     reacquire_gate_m: 1.20
