@@ -49,6 +49,8 @@ class FusedTargetTrackerNode(Node):
             "/camera_person_tracker/fused_target_marker_b",
         )
         self.declare_parameter("fused_target_frame", "fused_target")
+        self.declare_parameter("locked_lidar_target_frame", "locked_lidar_target")
+        self.declare_parameter("publish_locked_lidar_tf", True)
 
         self.declare_parameter("publish_period_sec", 0.10)
         self.declare_parameter("camera_timeout_sec", 0.60)
@@ -74,6 +76,12 @@ class FusedTargetTrackerNode(Node):
         ).value
         self.fused_marker_topic = self.get_parameter("fused_marker_topic").value
         self.fused_target_frame = self.get_parameter("fused_target_frame").value
+        self.locked_lidar_target_frame = self.get_parameter(
+            "locked_lidar_target_frame"
+        ).value
+        self.publish_locked_lidar_tf_enabled = bool(
+            self.get_parameter("publish_locked_lidar_tf").value
+        )
 
         self.publish_period_sec = float(self.get_parameter("publish_period_sec").value)
         self.camera_timeout_sec = float(self.get_parameter("camera_timeout_sec").value)
@@ -338,6 +346,21 @@ class FusedTargetTrackerNode(Node):
         t.transform.rotation.w = 1.0
         self.tf_broadcaster.sendTransform(t)
 
+    def publish_locked_lidar_tf(self, track: LidarTrackObservation) -> None:
+        if not self.publish_locked_lidar_tf_enabled:
+            return
+
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = self.world_frame
+        t.child_frame_id = self.locked_lidar_target_frame
+        t.transform.translation.x = track.x
+        t.transform.translation.y = track.y
+        t.transform.translation.z = track.z
+        t.transform.rotation.w = 1.0
+        self.tf_broadcaster.sendTransform(t)
+    
+
     def publish_fused_marker(
         self,
         state: str,
@@ -491,33 +514,34 @@ class FusedTargetTrackerNode(Node):
                         state = "FUSED"
                         fused_xyz = (camera_obs.x, camera_obs.y, camera_obs.z)
                     else:
-                        state = "CAMERA_ONLY"
-                        fused_xyz = (camera_obs.x, camera_obs.y, camera_obs.z)
+                        state = "LIDAR_ONLY"
+                        fused_xyz = (locked_track.x, locked_track.y, locked_track.z)
                 else:
                     state = "LIDAR_ONLY"
                     fused_xyz = (locked_track.x, locked_track.y, locked_track.z)
 
             else:
-                if camera_active:
-                    best_track_id, best_dist = self.nearest_lidar_track_to_point(
-                        camera_obs.x, camera_obs.y, camera_obs.z, lidar_tracks
-                    )
-
-                    if best_track_id is not None and best_dist <= self.reacquire_gate_m:
-                        self.locked_lidar_track_id = best_track_id
-                        self.update_lock_timestamp()
-                        state = "FUSED"
-                        fused_xyz = (camera_obs.x, camera_obs.y, camera_obs.z)
-                    else:
-                        state = "CAMERA_ONLY"
-                        fused_xyz = (camera_obs.x, camera_obs.y, camera_obs.z)
-
-                elif self.lock_is_recent():
+                if self.lock_is_recent():
                     state = "LOST"
                     fused_xyz = self.last_fused_xyz
                 else:
                     self.clear_lock()
-                    if camera_remembered:
+
+                    if camera_active:
+                        best_track_id, best_dist = self.nearest_lidar_track_to_point(
+                            camera_obs.x, camera_obs.y, camera_obs.z, lidar_tracks
+                        )
+
+                        if best_track_id is not None and best_dist <= self.reacquire_gate_m:
+                            self.locked_lidar_track_id = best_track_id
+                            self.update_lock_timestamp()
+                            state = "FUSED"
+                            fused_xyz = (camera_obs.x, camera_obs.y, camera_obs.z)
+                        else:
+                            state = "CAMERA_ONLY"
+                            fused_xyz = (camera_obs.x, camera_obs.y, camera_obs.z)
+
+                    elif camera_remembered:
                         state = "LOST"
                         fused_xyz = self.last_fused_xyz
                     else:
@@ -527,6 +551,11 @@ class FusedTargetTrackerNode(Node):
             self.last_fused_xyz = fused_xyz
             self.publish_fused_tf(fused_xyz[0], fused_xyz[1], fused_xyz[2])
             self.publish_fused_marker(state, fused_xyz, self.locked_lidar_track_id)
+
+        if self.locked_lidar_track_id is not None:
+            locked_track = lidar_tracks.get(self.locked_lidar_track_id)
+            if locked_track is not None:
+                self.publish_locked_lidar_tf(locked_track)
 
         self.current_state = state
 

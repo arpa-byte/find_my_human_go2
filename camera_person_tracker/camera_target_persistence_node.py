@@ -11,11 +11,11 @@ from cv_bridge import CvBridge
 from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, Image
-from tf2_ros import TransformBroadcaster
+from tf2_ros import Buffer, TransformBroadcaster, TransformException, TransformListener
 from ultralytics import YOLO
 from visualization_msgs.msg import Marker
-
 COLOR_TOPIC = "/camera/camera/color/image_raw"
 DEPTH_TOPIC = "/camera/camera/aligned_depth_to_color/image_raw"
 CAMERA_INFO_TOPIC = "/camera/camera/color/camera_info"
@@ -57,6 +57,8 @@ class CameraTargetPersistenceNode(Node):
 
         self.declare_parameter("camera_frame", CAMERA_FRAME)
         self.declare_parameter("target_frame", TARGET_FRAME)
+        self.declare_parameter("world_frame", "base_link")
+        self.declare_parameter("locked_lidar_target_frame", "locked_lidar_target")
 
         self.declare_parameter("model_path", "yolov8n.pt")
         self.declare_parameter("process_period_sec", 0.15)
@@ -65,6 +67,7 @@ class CameraTargetPersistenceNode(Node):
         self.declare_parameter("target_hold_sec", 1.0)
         self.declare_parameter("max_match_distance_m", 1.0)
         self.declare_parameter("max_depth_jump_m", 1.0)
+        self.declare_parameter("lidar_identity_gate_m", 0.50)
         self.declare_parameter("min_valid_depth_m", 0.2)
         self.declare_parameter("max_valid_depth_m", 8.0)
 
@@ -84,6 +87,10 @@ class CameraTargetPersistenceNode(Node):
 
         self.camera_frame = self.get_parameter("camera_frame").value
         self.target_frame = self.get_parameter("target_frame").value
+        self.world_frame = self.get_parameter("world_frame").value
+        self.locked_lidar_target_frame = self.get_parameter(
+            "locked_lidar_target_frame"
+        ).value
 
         self.model_path = self.get_parameter("model_path").value
         self.process_period_sec = float(self.get_parameter("process_period_sec").value)
@@ -91,6 +98,9 @@ class CameraTargetPersistenceNode(Node):
         self.target_hold_sec = float(self.get_parameter("target_hold_sec").value)
         self.max_match_distance_m = float(self.get_parameter("max_match_distance_m").value)
         self.max_depth_jump_m = float(self.get_parameter("max_depth_jump_m").value)
+        self.lidar_identity_gate_m = float(
+            self.get_parameter("lidar_identity_gate_m").value
+        )
         self.min_valid_depth_m = float(self.get_parameter("min_valid_depth_m").value)
         self.max_valid_depth_m = float(self.get_parameter("max_valid_depth_m").value)
 
@@ -104,6 +114,9 @@ class CameraTargetPersistenceNode(Node):
         # -----------------------------
         self.bridge = CvBridge()
         self.model = YOLO(self.model_path)
+
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.rgb: Optional[np.ndarray] = None
         self.depth: Optional[np.ndarray] = None
@@ -258,6 +271,105 @@ class CameraTargetPersistenceNode(Node):
             (a[1] - b[1]) ** 2 +
             (a[2] - b[2]) ** 2
         )
+    
+    def rotate_point_by_quaternion(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        qx: float,
+        qy: float,
+        qz: float,
+        qw: float,
+    ) -> Tuple[float, float, float]:
+        tx = 2.0 * (qy * z - qz * y)
+        ty = 2.0 * (qz * x - qx * z)
+        tz = 2.0 * (qx * y - qy * x)
+
+        rx = x + qw * tx + (qy * tz - qz * ty)
+        ry = y + qw * ty + (qz * tx - qx * tz)
+        rz = z + qw * tz + (qx * ty - qy * tx)
+
+        return rx, ry, rz
+    
+    def transform_point(
+        self,
+        source_frame: str,
+        target_frame: str,
+        xyz: Tuple[float, float, float],
+    ) -> Optional[Tuple[float, float, float]]:
+        if source_frame == target_frame:
+            return (float(xyz[0]), float(xyz[1]), float(xyz[2]))
+
+        try:
+            tf_msg = self.tf_buffer.lookup_transform(
+                target_frame,
+                source_frame,
+                Time(),
+            )
+        except TransformException:
+            return None
+
+        qx = float(tf_msg.transform.rotation.x)
+        qy = float(tf_msg.transform.rotation.y)
+        qz = float(tf_msg.transform.rotation.z)
+        qw = float(tf_msg.transform.rotation.w)
+
+        tx = float(tf_msg.transform.translation.x)
+        ty = float(tf_msg.transform.translation.y)
+        tz = float(tf_msg.transform.translation.z)
+
+        rx, ry, rz = self.rotate_point_by_quaternion(
+            float(xyz[0]),
+            float(xyz[1]),
+            float(xyz[2]),
+            qx,
+            qy,
+            qz,
+            qw,
+        )
+
+        return (rx + tx, ry + ty, rz + tz)
+
+    def get_locked_lidar_target_world_xyz(self) -> Optional[Tuple[float, float, float]]:
+        try:
+            tf_locked = self.tf_buffer.lookup_transform(
+                self.world_frame,
+                self.locked_lidar_target_frame,
+                Time(),
+            )
+            return (
+                float(tf_locked.transform.translation.x),
+                float(tf_locked.transform.translation.y),
+                float(tf_locked.transform.translation.z),
+            )
+        except TransformException:
+            return None
+
+    def filter_candidates_by_locked_lidar_identity(
+        self,
+        candidates: List[CandidateDetection],
+    ) -> List[CandidateDetection]:
+        locked_world_xyz = self.get_locked_lidar_target_world_xyz()
+        if locked_world_xyz is None:
+            return candidates
+
+        filtered: List[CandidateDetection] = []
+
+        for cand in candidates:
+            cand_world_xyz = self.transform_point(
+                self.camera_frame,
+                self.world_frame,
+                cand.xyz,
+            )
+            if cand_world_xyz is None:
+                continue
+
+            dist = self.distance_xyz(cand_world_xyz, locked_world_xyz)
+            if dist <= self.lidar_identity_gate_m:
+                filtered.append(cand)
+
+        return filtered
 
     def target_age_sec(self) -> float:
         if self.last_seen_sec is None:
@@ -357,7 +469,13 @@ class CameraTargetPersistenceNode(Node):
         if self.target_is_remembered():
             return None
 
-        return self.select_initial_target(candidates)
+        lidar_consistent_candidates = self.filter_candidates_by_locked_lidar_identity(
+            candidates
+        )
+        if not lidar_consistent_candidates:
+            return None
+
+        return self.select_initial_target(lidar_consistent_candidates)
 
     def set_target_from_candidate(self, cand: CandidateDetection) -> None:
         self.target_active = True

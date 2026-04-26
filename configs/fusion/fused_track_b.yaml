@@ -7,13 +7,15 @@ fused_target_tracker:
     fused_marker_topic: "/camera_person_tracker/fused_target_marker_b"
 
     fused_target_frame: "fused_target"
+    locked_lidar_target_frame: "locked_lidar_target"
+    publish_locked_lidar_tf: true
 
     publish_period_sec: 0.10
     camera_timeout_sec: 0.60
     lidar_timeout_sec: 5.00
 
     association_gate_m: 1.00
-    reacquire_gate_m: 1.20
+    reacquire_gate_m: 0.80
     lock_memory_sec: 1.50
 
     marker_scale_m: 0.24
