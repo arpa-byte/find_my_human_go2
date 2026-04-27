@@ -57,11 +57,12 @@ class FusedTargetTrackerNode(Node):
         self.declare_parameter("lidar_timeout_sec", 5.00)
 
         self.declare_parameter("association_gate_m", 1.00)
-        self.declare_parameter("reacquire_gate_m", 1.20)
+        self.declare_parameter("reacquire_gate_m", 0.80)
         self.declare_parameter("lock_memory_sec", 1.50)
 
         self.declare_parameter("marker_scale_m", 0.24)
         self.declare_parameter("text_scale_m", 0.22)
+        self.declare_parameter("text_z_offset_m", 0.45)
         self.declare_parameter("marker_lifetime_sec", 0.30)
 
         self.declare_parameter("log_period_sec", 0.75)
@@ -93,6 +94,7 @@ class FusedTargetTrackerNode(Node):
 
         self.marker_scale_m = float(self.get_parameter("marker_scale_m").value)
         self.text_scale_m = float(self.get_parameter("text_scale_m").value)
+        self.text_z_offset_m = float(self.get_parameter("text_z_offset_m").value)
         self.marker_lifetime_sec = float(self.get_parameter("marker_lifetime_sec").value)
 
         self.log_period_sec = float(self.get_parameter("log_period_sec").value)
@@ -139,6 +141,7 @@ class FusedTargetTrackerNode(Node):
         self.get_logger().info(f"Association gate    : {self.association_gate_m:.2f} m")
         self.get_logger().info(f"Reacquire gate      : {self.reacquire_gate_m:.2f} m")
         self.get_logger().info(f"Lock memory         : {self.lock_memory_sec:.2f} s")
+        self.get_logger().info(f"Text z offset       : {self.text_z_offset_m:.2f} m")
 
     def stamp_to_sec(self, stamp_msg) -> float:
         return float(stamp_msg.sec) + float(stamp_msg.nanosec) * 1e-9
@@ -258,10 +261,6 @@ class FusedTargetTrackerNode(Node):
         )
 
     def lidar_tracks_data_callback(self, msg: Marker) -> None:
-        """
-        Expects one marker per LiDAR track on /camera_person_tracker/lidar_tracks_data.
-        Marker ID = track ID.
-        """
         if msg.action != Marker.ADD:
             return
 
@@ -359,7 +358,6 @@ class FusedTargetTrackerNode(Node):
         t.transform.translation.z = track.z
         t.transform.rotation.w = 1.0
         self.tf_broadcaster.sendTransform(t)
-    
 
     def publish_fused_marker(
         self,
@@ -370,47 +368,87 @@ class FusedTargetTrackerNode(Node):
         if fused_xyz is None:
             return
 
-        marker = Marker()
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.header.frame_id = self.world_frame
-        marker.ns = "fusion_b"
-        marker.id = 0
-        marker.type = Marker.SPHERE
-        marker.action = Marker.ADD
-        marker.pose.position.x = fused_xyz[0]
-        marker.pose.position.y = fused_xyz[1]
-        marker.pose.position.z = fused_xyz[2]
-        marker.pose.orientation.w = 1.0
-        marker.scale.x = self.marker_scale_m
-        marker.scale.y = self.marker_scale_m
-        marker.scale.z = self.marker_scale_m
+        sphere = Marker()
+        sphere.header.stamp = self.get_clock().now().to_msg()
+        sphere.header.frame_id = self.world_frame
+        sphere.ns = "fusion_b"
+        sphere.id = 0
+        sphere.type = Marker.SPHERE
+        sphere.action = Marker.ADD
+        sphere.pose.position.x = fused_xyz[0]
+        sphere.pose.position.y = fused_xyz[1]
+        sphere.pose.position.z = fused_xyz[2]
+        sphere.pose.orientation.w = 1.0
+        sphere.scale.x = self.marker_scale_m
+        sphere.scale.y = self.marker_scale_m
+        sphere.scale.z = self.marker_scale_m
 
         if state == "FUSED":
-            marker.color.r = 0.0
-            marker.color.g = 1.0
-            marker.color.b = 1.0
-            marker.color.a = 0.95
+            sphere.color.r = 0.0
+            sphere.color.g = 1.0
+            sphere.color.b = 1.0
+            sphere.color.a = 0.95
         elif state == "CAMERA_ONLY":
-            marker.color.r = 1.0
-            marker.color.g = 0.0
-            marker.color.b = 1.0
-            marker.color.a = 0.95
+            sphere.color.r = 1.0
+            sphere.color.g = 0.0
+            sphere.color.b = 1.0
+            sphere.color.a = 0.95
         elif state == "LIDAR_ONLY":
-            marker.color.r = 1.0
-            marker.color.g = 1.0
-            marker.color.b = 0.0
-            marker.color.a = 0.95
+            sphere.color.r = 1.0
+            sphere.color.g = 1.0
+            sphere.color.b = 0.0
+            sphere.color.a = 0.95
         else:
-            marker.color.r = 0.6
-            marker.color.g = 0.6
-            marker.color.b = 0.6
-            marker.color.a = 0.8
+            sphere.color.r = 0.6
+            sphere.color.g = 0.6
+            sphere.color.b = 0.6
+            sphere.color.a = 0.8
 
-        text = f"{state} | lidar_id={locked_track_id if locked_track_id is not None else 'None'}"
-        marker.text = text
+        self.make_marker_lifetime(sphere)
+        self.fused_marker_pub.publish(sphere)
 
-        self.make_marker_lifetime(marker)
-        self.fused_marker_pub.publish(marker)
+        text = Marker()
+        text.header.stamp = sphere.header.stamp
+        text.header.frame_id = self.world_frame
+        text.ns = "fusion_b"
+        text.id = 1
+        text.type = Marker.TEXT_VIEW_FACING
+        text.action = Marker.ADD
+        text.pose.position.x = fused_xyz[0]
+        text.pose.position.y = fused_xyz[1]
+        text.pose.position.z = fused_xyz[2] + self.text_z_offset_m
+        text.pose.orientation.w = 1.0
+        text.scale.z = self.text_scale_m
+
+        if state == "FUSED":
+            text.color.r = 0.0
+            text.color.g = 1.0
+            text.color.b = 1.0
+            text.color.a = 0.98
+        elif state == "CAMERA_ONLY":
+            text.color.r = 1.0
+            text.color.g = 0.2
+            text.color.b = 1.0
+            text.color.a = 0.98
+        elif state == "LIDAR_ONLY":
+            text.color.r = 1.0
+            text.color.g = 1.0
+            text.color.b = 0.2
+            text.color.a = 0.98
+        else:
+            text.color.r = 1.0
+            text.color.g = 1.0
+            text.color.b = 1.0
+            text.color.a = 0.95
+
+        text.text = (
+            f"OWNER\n"
+            f"state={state}\n"
+            f"lidar_id={locked_track_id if locked_track_id is not None else 'None'}"
+        )
+
+        self.make_marker_lifetime(text)
+        self.fused_marker_pub.publish(text)
 
     def maybe_log_match_debug(
         self,
@@ -503,6 +541,7 @@ class FusedTargetTrackerNode(Node):
         else:
             if locked_track is not None:
                 self.update_lock_timestamp()
+                self.publish_locked_lidar_tf(locked_track)
 
                 if camera_active:
                     dist = self.distance_3d(
@@ -551,11 +590,6 @@ class FusedTargetTrackerNode(Node):
             self.last_fused_xyz = fused_xyz
             self.publish_fused_tf(fused_xyz[0], fused_xyz[1], fused_xyz[2])
             self.publish_fused_marker(state, fused_xyz, self.locked_lidar_track_id)
-
-        if self.locked_lidar_track_id is not None:
-            locked_track = lidar_tracks.get(self.locked_lidar_track_id)
-            if locked_track is not None:
-                self.publish_locked_lidar_tf(locked_track)
 
         self.current_state = state
 
