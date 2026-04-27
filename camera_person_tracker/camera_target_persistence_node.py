@@ -346,6 +346,9 @@ class CameraTargetPersistenceNode(Node):
         except TransformException:
             return None
 
+    def lidar_has_locked_owner(self) -> bool:
+        return self.get_locked_lidar_target_world_xyz() is not None
+
     def filter_candidates_by_locked_lidar_identity(
         self,
         candidates: List[CandidateDetection],
@@ -353,6 +356,31 @@ class CameraTargetPersistenceNode(Node):
         locked_world_xyz = self.get_locked_lidar_target_world_xyz()
         if locked_world_xyz is None:
             return candidates
+
+        filtered: List[CandidateDetection] = []
+
+        for cand in candidates:
+            cand_world_xyz = self.transform_point(
+                self.camera_frame,
+                self.world_frame,
+                cand.xyz,
+            )
+            if cand_world_xyz is None:
+                continue
+
+            dist = self.distance_xyz(cand_world_xyz, locked_world_xyz)
+            if dist <= self.lidar_identity_gate_m:
+                filtered.append(cand)
+
+        return filtered
+
+    def get_lidar_consistent_candidates_only(
+        self,
+        candidates: List[CandidateDetection],
+    ) -> List[CandidateDetection]:
+        locked_world_xyz = self.get_locked_lidar_target_world_xyz()
+        if locked_world_xyz is None:
+            return []
 
         filtered: List[CandidateDetection] = []
 
@@ -465,11 +493,11 @@ class CameraTargetPersistenceNode(Node):
             return valid_matches[0][1]
 
         # Fallback: if target has effectively disappeared, do not jump aggressively.
-        # Only reassign when memory has expired.
+        # Only allow fallback reassignment when LiDAR currently has a locked owner.
         if self.target_is_remembered():
             return None
 
-        lidar_consistent_candidates = self.filter_candidates_by_locked_lidar_identity(
+        lidar_consistent_candidates = self.get_lidar_consistent_candidates_only(
             candidates
         )
         if not lidar_consistent_candidates:
@@ -687,11 +715,29 @@ class CameraTargetPersistenceNode(Node):
 
             self.annotate_candidates(frame, candidates)
 
+
+            # Camera must consult LiDAR first:
+            # - if LiDAR has a locked owner TF, only candidates consistent with that
+            #   locked owner are eligible
+            # - if LiDAR has no locked owner TF, camera may initialize or continue
+            #   tracking using camera-only logic
+
             matched = None
-            if not self.target_active:
-                matched = self.select_initial_target(candidates)
+            lidar_locked_owner_present = self.lidar_has_locked_owner()
+            lidar_consistent_candidates = self.get_lidar_consistent_candidates_only(
+                candidates
+            )
+
+            if lidar_locked_owner_present:
+                if self.target_active:
+                    matched = self.match_existing_target(lidar_consistent_candidates)
+                else:
+                    matched = self.select_initial_target(lidar_consistent_candidates)
             else:
-                matched = self.match_existing_target(candidates)
+                if not self.target_active:
+                    matched = self.select_initial_target(candidates)
+                else:
+                    matched = self.match_existing_target(candidates)
 
             if matched is not None:
                 self.set_target_from_candidate(matched)
