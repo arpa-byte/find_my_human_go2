@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 
 import math
+import csv
 from dataclasses import dataclass
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import cv2
@@ -145,9 +149,19 @@ class CameraTargetPersistenceNode(Node):
         self.last_log_time = self.get_clock().now()
 
         # Stats
+        # Stats
         self.sync_count = 0
         self.sync_sum_ms = 0.0
         self.sync_max_ms = 0.0
+
+        # CSV logging
+        self.package_root = Path.cwd() / "src" / "camera_person_tracker"
+        self.test_logs_root = self.package_root / "test_logs"
+        self.run_stamp = datetime.now().strftime("run_%Y-%m-%d_%H-%M-%S")
+        self.run_dir = self.test_logs_root / self.run_stamp
+
+        self.camera_owner_rows = []
+        self.camera_candidate_rows = []
 
         # -----------------------------
         # ROS I/O
@@ -418,6 +432,156 @@ class CameraTargetPersistenceNode(Node):
             self.last_log_time = now
             return True
         return False
+    
+    def now_sec(self) -> float:
+        return self.stamp_to_sec(self.get_clock().now().to_msg())
+
+    def ensure_run_dir(self) -> None:
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+
+    def append_camera_candidates_csv(
+        self,
+        candidates: List[CandidateDetection],
+        lidar_locked_owner_present: bool,
+        lidar_consistent_candidates: List[CandidateDetection],
+    ) -> None:
+        now_sec = self.now_sec()
+        consistent_keys = {
+            (cand.cx, cand.cy, round(cand.depth_m, 3)) for cand in lidar_consistent_candidates
+        }
+
+        if not candidates:
+            self.camera_candidate_rows.append(
+                {
+                    "t_sec": now_sec,
+                    "candidate_index": -1,
+                    "is_detected": 0,
+                    "cx_px": "",
+                    "cy_px": "",
+                    "depth_m": "",
+                    "cam_x_m": "",
+                    "cam_y_m": "",
+                    "cam_z_m": "",
+                    "bbox_x1": "",
+                    "bbox_y1": "",
+                    "bbox_x2": "",
+                    "bbox_y2": "",
+                    "lidar_locked_owner_present": int(lidar_locked_owner_present),
+                    "lidar_consistent": "",
+                }
+            )
+            return
+
+        for idx, cand in enumerate(candidates):
+            key = (cand.cx, cand.cy, round(cand.depth_m, 3))
+            self.camera_candidate_rows.append(
+                {
+                    "t_sec": now_sec,
+                    "candidate_index": idx,
+                    "is_detected": 1,
+                    "cx_px": cand.cx,
+                    "cy_px": cand.cy,
+                    "depth_m": cand.depth_m,
+                    "cam_x_m": cand.xyz[0],
+                    "cam_y_m": cand.xyz[1],
+                    "cam_z_m": cand.xyz[2],
+                    "bbox_x1": cand.x1,
+                    "bbox_y1": cand.y1,
+                    "bbox_x2": cand.x2,
+                    "bbox_y2": cand.y2,
+                    "lidar_locked_owner_present": int(lidar_locked_owner_present),
+                    "lidar_consistent": int(key in consistent_keys),
+                }
+            )
+
+    def append_camera_owner_csv(self, sync_ms: Optional[float]) -> None:
+        now_sec = self.now_sec()
+
+        if self.target_visible:
+            owner_state = "ACTIVE"
+        elif self.target_is_remembered():
+            owner_state = "REMEMBERING"
+        elif self.target_active:
+            owner_state = "LOST"
+        else:
+            owner_state = "NONE"
+
+        row = {
+            "t_sec": now_sec,
+            "owner_state": owner_state,
+            "target_id": self.target_id if self.target_active else "",
+            "target_active": int(self.target_active),
+            "target_visible": int(self.target_visible),
+            "target_age_sec": self.target_age_sec() if self.last_seen_sec is not None else "",
+            "depth_m": self.last_target_depth_m if self.last_target_depth_m is not None else "",
+            "cam_x_m": self.last_target_xyz[0] if self.last_target_xyz is not None else "",
+            "cam_y_m": self.last_target_xyz[1] if self.last_target_xyz is not None else "",
+            "cam_z_m": self.last_target_xyz[2] if self.last_target_xyz is not None else "",
+            "px_x": self.last_target_px[0] if self.last_target_px is not None else "",
+            "px_y": self.last_target_px[1] if self.last_target_px is not None else "",
+            "sync_ms": sync_ms if sync_ms is not None else "",
+            "sync_avg_ms": self.avg_sync_ms(),
+            "sync_max_ms": self.sync_max_ms,
+        }
+        self.camera_owner_rows.append(row)
+
+    def save_csv_logs(self) -> None:
+        self.ensure_run_dir()
+
+        owner_csv = self.run_dir / "camera_owner_history.csv"
+        candidate_csv = self.run_dir / "camera_candidates_history.csv"
+
+        with owner_csv.open("w", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "t_sec",
+                    "owner_state",
+                    "target_id",
+                    "target_active",
+                    "target_visible",
+                    "target_age_sec",
+                    "depth_m",
+                    "cam_x_m",
+                    "cam_y_m",
+                    "cam_z_m",
+                    "px_x",
+                    "px_y",
+                    "sync_ms",
+                    "sync_avg_ms",
+                    "sync_max_ms",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(self.camera_owner_rows)
+
+        with candidate_csv.open("w", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "t_sec",
+                    "candidate_index",
+                    "is_detected",
+                    "cx_px",
+                    "cy_px",
+                    "depth_m",
+                    "cam_x_m",
+                    "cam_y_m",
+                    "cam_z_m",
+                    "bbox_x1",
+                    "bbox_y1",
+                    "bbox_x2",
+                    "bbox_y2",
+                    "lidar_locked_owner_present",
+                    "lidar_consistent",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(self.camera_candidate_rows)
+
+        self.get_logger().info(
+            f"Saved camera CSV logs to: {self.run_dir}"
+        )
 
     # -----------------------------
     # Target selection / matching
@@ -755,6 +919,14 @@ class CameraTargetPersistenceNode(Node):
 
             self.annotate_target_state(frame)
             self.publish_image(frame)
+
+            self.append_camera_candidates_csv(
+                candidates,
+                lidar_locked_owner_present,
+                lidar_consistent_candidates,
+            )
+            self.append_camera_owner_csv(sync_ms)
+
             self.maybe_log_target(sync_ms)
 
         except Exception as exc:
@@ -771,10 +943,10 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        try:
+            node.save_csv_logs()
+        except Exception as exc:
+            node.get_logger().error(f"Failed to save camera CSV logs: {exc}")
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
-
-if __name__ == "__main__":
-    main()

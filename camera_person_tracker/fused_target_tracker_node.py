@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
+import csv
 import math
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import rclpy
@@ -113,6 +116,13 @@ class FusedTargetTrackerNode(Node):
         self.current_state = "NO_TARGET"
         self.last_fused_xyz: Optional[Tuple[float, float, float]] = None
 
+        self.package_root = Path.cwd() / "src" / "camera_person_tracker"
+        self.test_logs_root = self.package_root / "test_logs"
+        self.run_stamp = datetime.now().strftime("run_%Y-%m-%d_%H-%M-%S")
+        self.run_dir = self.test_logs_root / self.run_stamp
+
+        self.fusion_state_rows = []
+
         self.last_log_time = self.get_clock().now()
 
         self.create_subscription(
@@ -156,6 +166,62 @@ class FusedTargetTrackerNode(Node):
             self.last_log_time = now
             return True
         return False
+    
+    def ensure_run_dir(self) -> None:
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+
+    def append_fusion_state_csv(
+        self,
+        state: str,
+        fused_xyz: Optional[Tuple[float, float, float]],
+        camera_active: bool,
+        camera_remembered: bool,
+    ) -> None:
+        now_sec = self.now_sec()
+        self.fusion_state_rows.append(
+            {
+                "t_sec": now_sec,
+                "state": state,
+                "camera_state": "ACTIVE" if camera_active else ("REMEMBERED" if camera_remembered else "NONE"),
+                "locked_lidar_track_id": self.locked_lidar_track_id if self.locked_lidar_track_id is not None else "",
+                "fused_x_m": fused_xyz[0] if fused_xyz is not None else "",
+                "fused_y_m": fused_xyz[1] if fused_xyz is not None else "",
+                "fused_z_m": fused_xyz[2] if fused_xyz is not None else "",
+                "last_fused_x_m": self.last_fused_xyz[0] if self.last_fused_xyz is not None else "",
+                "last_fused_y_m": self.last_fused_xyz[1] if self.last_fused_xyz is not None else "",
+                "last_fused_z_m": self.last_fused_xyz[2] if self.last_fused_xyz is not None else "",
+                "num_fresh_lidar_tracks": len(self.get_fresh_lidar_tracks()),
+            }
+        )
+
+    def save_csv_logs(self) -> None:
+        self.ensure_run_dir()
+
+        fusion_csv = self.run_dir / "fusion_state_history.csv"
+
+        with fusion_csv.open("w", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "t_sec",
+                    "state",
+                    "camera_state",
+                    "locked_lidar_track_id",
+                    "fused_x_m",
+                    "fused_y_m",
+                    "fused_z_m",
+                    "last_fused_x_m",
+                    "last_fused_y_m",
+                    "last_fused_z_m",
+                    "num_fresh_lidar_tracks",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(self.fusion_state_rows)
+
+        self.get_logger().info(
+            f"Saved fusion CSV logs to: {self.run_dir}"
+        )
 
     def make_marker_lifetime(self, marker: Marker) -> None:
         marker.lifetime.sec = int(self.marker_lifetime_sec)
@@ -592,6 +658,12 @@ class FusedTargetTrackerNode(Node):
             self.publish_fused_marker(state, fused_xyz, self.locked_lidar_track_id)
 
         self.current_state = state
+        self.append_fusion_state_csv(
+            state,
+            fused_xyz,
+            camera_active,
+            camera_remembered,
+        )
 
         locked_id = "None" if self.locked_lidar_track_id is None else str(self.locked_lidar_track_id)
         if fused_xyz is not None:
@@ -615,10 +687,10 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        try:
+            node.save_csv_logs()
+        except Exception as exc:
+            node.get_logger().error(f"Failed to save fusion CSV logs: {exc}")
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
-
-if __name__ == "__main__":
-    main()
