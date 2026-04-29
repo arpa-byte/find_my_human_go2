@@ -51,6 +51,7 @@ realsense-ros/
 *.tar.gz
 *.rar
 *.pdf
+*.csv
 
 # ROS bag files
 *.bag
